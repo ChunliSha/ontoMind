@@ -1,0 +1,47 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 03 · AI 辅助抽取</p>
+    <h1>业务逻辑抽取</h1>
+    <p class="lead">从业务文档中抽取因果与约束规则，导出为 JSON。</p>
+  </div>
+
+  <div class="step-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+    @for (n of [1,2,3,4]; track n) {
+      <div class="panel" style="padding:12px;" [style.borderColor]="store.step()===n ? 'var(--accent)' : null">
+        <b>Step {{ n }}</b> · {{ ['选择 Schema','选择文档','抽取中','结果'][n-1] }}
+      </div>
+    }
+  </div>
+
+  <div class="panel" style="padding:18px;">
+    @if (store.step() === 1) {
+      <label>Schema
+        <select [ngModel]="store.schemaId()" (ngModelChange)="store.schemaId.set($event)">
+          @for (s of store.schemas(); track s.id) { <option [value]="s.id">{{ s.name }}</option> }
+        </select>
+      </label>
+      <div style="margin-top:14px;"><button class="btn btn-primary" type="button" (click)="store.step.set(2)">下一步</button></div>
+    }
+    @if (store.step() === 2) {
+      @for (f of store.files(); track f.id) {
+        <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+          <input type="checkbox" [checked]="store.selectedFileIds().has(f.id)" (change)="store.toggleFile(f.id)" />
+          {{ f.name }}
+        </label>
+      } @empty { <ui-empty-state title="无可用文档" /> }
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">上一步</button>
+        <button class="btn btn-primary" type="button" [disabled]="!store.selectedFileIds().size" (click)="store.start()">开始抽取</button>
+      </div>
+    }
+    @if (store.step() === 3) {
+      <ui-progress-bar [progress]="store.task()?.progress || 0" label="业务逻辑抽取" />
+    }
+    @if (store.step() === 4) {
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn btn-secondary btn-sm" type="button" (click)="store.export()"><svg lucideIcon="download" [size]="14"></svg>导出文件</button>
+      </div>
+      <ui-code-block title="业务逻辑规则 JSON" [code]="store.jsonPreview()" />
+    }
+  </div>
+</section>

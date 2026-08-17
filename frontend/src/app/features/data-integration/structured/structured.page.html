@@ -1,0 +1,102 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 01 · 业务数据集成</p>
+    <div class="view-head-row">
+      <div>
+        <h1>结构化数据管理</h1>
+        <p class="lead">连接关系型数据库，浏览表结构与数据，作为 Schema 设计与实例抽取的数据来源。</p>
+      </div>
+      <button class="btn btn-primary" type="button" (click)="openCreate()"><svg lucideIcon="plus" [size]="16"></svg>新增数据库连接</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <ui-search-box placeholder="搜索连接名称 / 主机地址" [value]="store.search()" (valueChange)="onSearch($event)" />
+  </div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>连接名称</th><th>类型</th><th>主机 / 端口</th><th>数据库名</th><th>表数量</th><th>状态</th><th>最近同步</th><th>操作</th>
+        </tr></thead>
+        <tbody>
+          @for (row of store.items(); track row.id) {
+            <tr>
+              <td class="cell-main">
+                <div class="file-ic" style="background:#E3EEFB;color:#2C6FC9;"><svg lucideIcon="database" [size]="16"></svg></div>
+                <div><div class="cell-title">{{ row.name }}</div><div class="cell-sub">{{ row.id.slice(0,8) }}</div></div>
+              </td>
+              <td><ui-badge [variant]="row.db_type==='postgres' ? 'b-accent' : 'b-neutral'">{{ typeLabel(row.db_type) }}</ui-badge></td>
+              <td style="font-family:var(--f-mono);font-size:12px;">{{ row.host }}:{{ row.port }}</td>
+              <td>{{ row.database_name }}</td>
+              <td>{{ row.table_count }}</td>
+              <td><ui-badge [variant]="statusBadge(row.status)">{{ statusLabel(row.status) }}</ui-badge></td>
+              <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">{{ row.last_synced_at | relativeTime }}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="icon-btn" title="查看表" type="button" (click)="viewTables(row)"><svg lucideIcon="table" [size]="15"></svg></button>
+                  <button class="icon-btn" title="编辑" type="button" (click)="openEdit(row)"><svg lucideIcon="pencil" [size]="15"></svg></button>
+                  <button class="icon-btn" title="重试" type="button" (click)="store.retry(row.id)"><svg lucideIcon="refresh-cw" [size]="15"></svg></button>
+                  <button class="icon-btn" title="删除" type="button" (click)="remove(row)"><svg lucideIcon="trash-2" [size]="15"></svg></button>
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="8"><ui-empty-state title="暂无数据库连接" desc="点击右上角新增数据库连接" /></td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<ui-modal [open]="dbModalOpen()" [title]="editing() ? '编辑数据库连接' : '新增数据库连接'" (closed)="dbModalOpen.set(false)" width="560px">
+  <form [formGroup]="form" class="form-grid" (ngSubmit)="save()">
+    <label>连接名称<input formControlName="name" /><span class="field-error">{{ fieldError('name') }}</span></label>
+    <label>数据库类型
+      <select formControlName="db_type">
+        <option value="postgres">PostgreSQL</option>
+        <option value="mysql">MySQL</option>
+        <option value="gaussdb">GaussDB</option>
+      </select>
+    </label>
+    <label>主机地址<input formControlName="host" /><span class="field-error">{{ fieldError('host') }}</span></label>
+    <label>端口<input type="number" formControlName="port" /></label>
+    <label>数据库名<input formControlName="database_name" /><span class="field-error">{{ fieldError('database_name') }}</span></label>
+    <label>用户名<input formControlName="username" /><span class="field-error">{{ fieldError('username') }}</span></label>
+    <label>密码<input type="password" formControlName="password" [placeholder]="editing() ? '留空则不修改' : ''" /><span class="field-error">{{ fieldError('password') }}</span></label>
+  </form>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-secondary" type="button" (click)="testConn()">测试连接</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost" type="button" (click)="dbModalOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="save()">确定</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="tablesModalOpen()" title="选择建模用表" (closed)="tablesModalOpen.set(false)" width="640px">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th></th><th>Schema</th><th>表名</th><th>列数</th><th>行数</th></tr></thead>
+      <tbody>
+        @for (t of store.tables(); track t.id) {
+          <tr>
+            <td><input type="checkbox" [checked]="t.selected_for_modeling || selectedTableIds().has(t.id)"
+              (change)="toggleTable(t.id, $any($event.target).checked)" /></td>
+            <td>{{ t.table_schema }}</td>
+            <td>{{ t.table_name }}</td>
+            <td>{{ t.column_count ?? '—' }}</td>
+            <td>{{ t.row_count ?? '—' }}</td>
+          </tr>
+        } @empty {
+          <tr><td colspan="5" style="padding:16px;color:var(--text-400)">暂无表，请先测试连接</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="tablesModalOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="confirmTables()">确定选择</button>
+  </div>
+</ui-modal>

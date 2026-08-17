@@ -1,0 +1,121 @@
+"""Extraction / instance Pydantic DTOs."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ExtractionTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_type: Literal[
+        "schema_induction",
+        "instance_unstructured",
+        "instance_structured",
+        "business_logic",
+    ]
+    status: Literal["pending", "running", "succeeded", "failed"]
+    schema_id: str | None = None
+    progress: float
+    output_summary: dict | None = None
+    error_message: str | None = None
+    created_at: datetime | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class TaskAccepted(BaseModel):
+    task_id: str
+    status: Literal["pending"] = "pending"
+
+
+class UnstructuredExtractionRequest(BaseModel):
+    schema_id: str
+    file_ids: list[str] = Field(min_length=1)
+    ai_config: dict | None = None
+    model_id: str | None = None
+    # True：抽取前清除本 Schema 当前版本下的非结构化实例，避免重复堆积
+    replace_existing: bool = True
+
+
+class StructuredExtractionRequest(BaseModel):
+    schema_id: str
+    mapping_ids: list[str] = Field(min_length=1)
+    replace_existing: bool = False
+
+
+class BusinessLogicExtractionRequest(BaseModel):
+    schema_id: str
+    file_ids: list[str] = Field(min_length=1)
+    ai_config: dict | None = None
+
+
+class ClearInstancesRequest(BaseModel):
+    schema_version: int | None = None
+    source_types: list[str] | None = None
+
+
+class ClearInstancesResult(BaseModel):
+    deleted: int
+    schema_id: str
+    schema_version: int | None = None
+
+
+class InstanceDataValueRead(BaseModel):
+    property_id: str
+    property_label: str | None = None
+    value: str
+
+
+class InstanceRelationRead(BaseModel):
+    property_id: str
+    property_label: str | None = None
+    object_instance_id: str
+    object_instance_label: str | None = None
+
+
+class InstanceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    schema_id: str
+    class_id: str
+    class_label: str | None = None
+    label: str
+    local_name: str | None = None
+    source_type: str
+    source_ref: dict | None = None
+    confidence: float | None = None
+    schema_version: int | None = None
+    extraction_task_id: str | None = None
+    created_at: datetime
+    data_values: list[InstanceDataValueRead] = []
+    relations: list[InstanceRelationRead] = []
+
+
+class InstanceStatsItem(BaseModel):
+    class_id: str
+    class_label: str
+    count: int
+
+
+class InstanceStatsResponse(BaseModel):
+    schema_id: str
+    schema_version: int | None = None
+    total: int
+    by_class: list[InstanceStatsItem]
+
+
+class InstanceInventoryResponse(BaseModel):
+    schema_id: str
+    schema_name: str
+    schema_version: int
+    filter_version: int | None = None
+    versions: list[int]
+    total: int
+    by_class: list[InstanceStatsItem]
+    recent_tasks: list[ExtractionTaskRead] = []

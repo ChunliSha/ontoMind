@@ -1,0 +1,541 @@
+@prefix : <http://ontomind.example.org/power-grid#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix semantica: <https://semantica.dev/ns#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://ontomind.example.org/power-grid> a owl:Ontology ;
+    rdfs:label "变电站设备缺陷与检修管理本体"@zh ;
+    rdfs:comment "面向电力行业变电站场景，覆盖设备台账、缺陷发现、检修处理与运维巡检全流程的领域本体，用于从缺陷报告、检修工单、巡检记录等业务文档中抽取实例。"@zh .
+
+:CriticalDefect a owl:Class ;
+    rdfs:label "危急缺陷"@zh ;
+    rdfs:subClassOf :Defect .
+
+:Defect_油枕法兰密封垫老化 a :Defect ;
+    rdfs:label "油枕法兰密封垫老化"@zh ;
+    semantica:confidence 0.9 ;
+    semantica:text "油枕法兰密封垫老化" .
+
+:Defect_渗油缺陷 a :Defect ;
+    rdfs:label "渗油缺陷"@zh ;
+    semantica:confidence 0.915 ;
+    semantica:text "渗油缺陷" .
+
+:Defect_轻微异响 a :Defect ;
+    rdfs:label "轻微异响"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "轻微异响" .
+
+:Equipment_180MVA a :Equipment ;
+    rdfs:label "180MVA"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "180MVA" .
+
+:Equipment_2018-06-15 a :Equipment ;
+    rdfs:label "2018-06-15"@zh ;
+    semantica:confidence 0.8400000000000001 ;
+    semantica:text "2018-06-15" .
+
+:Equipment_220kV a :Equipment ;
+    rdfs:label "220kV"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "220kV" .
+
+:Equipment_BY-2018-001 a :Equipment ;
+    rdfs:label "BY-2018-001"@zh ;
+    semantica:confidence 0.915 ;
+    semantica:text "BY-2018-001" .
+
+:Equipment_JX-2205 a :Equipment ;
+    rdfs:label "JX-2205"@zh ;
+    semantica:confidence 0.8400000000000001 ;
+    semantica:text "JX-2205" .
+
+:Equipment_JX-2318 a :Equipment ;
+    rdfs:label "JX-2318"@zh ;
+    semantica:confidence 0.8400000000000001 ;
+    semantica:text "JX-2318" .
+
+:Equipment_密封垫 a :Equipment ;
+    rdfs:label "密封垫"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "密封垫" .
+
+:Equipment_局部放电 a :Equipment ;
+    rdfs:label "局部放电"@zh ;
+    semantica:confidence 0.8400000000000001 ;
+    semantica:text "局部放电" .
+
+:Equipment_本体 a :Equipment ;
+    rdfs:label "本体"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "本体" .
+
+:Equipment_油位 a :Equipment ;
+    rdfs:label "油位"@zh ;
+    semantica:confidence 0.8400000000000001 ;
+    semantica:text "油位" .
+
+:Equipment_油枕 a :Equipment ;
+    rdfs:label "油枕"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "油枕" .
+
+:Equipment_油温 a :Equipment ;
+    rdfs:label "油温"@zh ;
+    semantica:confidence 0.8400000000000001 ;
+    semantica:text "油温" .
+
+:Equipment_绝缘油 a :Equipment ;
+    rdfs:label "绝缘油"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "绝缘油" .
+
+:Equipment_螺栓 a :Equipment ;
+    rdfs:label "螺栓"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "螺栓" .
+
+:GeneralDefect a owl:Class ;
+    rdfs:label "一般缺陷"@zh ;
+    rdfs:subClassOf :Defect .
+
+:InspectionRecord_2026-07-31 a :InspectionRecord ;
+    rdfs:label "2026-07-31"@zh ;
+    semantica:confidence 0.915 ;
+    semantica:text "2026-07-31" .
+
+:InspectionRecord_2026-08-12 a :InspectionRecord ;
+    rdfs:label "2026-08-12"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "2026-08-12" .
+
+:InspectionRecord_2026-08-13 a :InspectionRecord ;
+    rdfs:label "2026-08-13"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "2026-08-13" .
+
+:InspectionRecord_2026-08-14 a :InspectionRecord ;
+    rdfs:label "2026-08-14"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "2026-08-14" .
+
+:InspectionRecord_2026年7月31日 a :InspectionRecord ;
+    rdfs:label "2026年7月31日"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "2026年7月31日" .
+
+:InspectionRecord_2026年8月13日18_20 a :InspectionRecord ;
+    rdfs:label "2026年8月13日18:20"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "2026年8月13日18:20" .
+
+:InspectionRecord_耐压试验 a :InspectionRecord ;
+    rdfs:label "耐压试验"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "耐压试验" .
+
+:InspectionRecord_色谱试验 a :InspectionRecord ;
+    rdfs:label "色谱试验"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "色谱试验" .
+
+:Inspector_巡检员 a :Inspector ;
+    rdfs:label "巡检员"@zh ;
+    semantica:confidence 0.915 ;
+    semantica:text "巡检员" .
+
+:Person_XJ-1024 a :Person ;
+    rdfs:label "XJ-1024"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "XJ-1024" .
+
+:Person_王建国 a :Person ;
+    rdfs:label "王建国"@zh ;
+    semantica:confidence 0.935 ;
+    semantica:text "王建国" .
+
+:Reactor a owl:Class ;
+    rdfs:label "电抗器"@zh ;
+    rdfs:subClassOf :Equipment .
+
+:Transformer_油浸式电力变压器 a :Transformer ;
+    rdfs:label "油浸式电力变压器"@zh ;
+    semantica:confidence 0.9 ;
+    semantica:text "油浸式电力变压器" .
+
+:actualCompletionDate a owl:DatatypeProperty ;
+    rdfs:label "实际完成时间"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range xsd:date .
+
+:commissioningDate a owl:DatatypeProperty ;
+    rdfs:label "投运日期"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range xsd:date .
+
+:conductedBy a owl:ObjectProperty ;
+    rdfs:label "巡检执行人"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range :Inspector ;
+    rdfs:subPropertyOf :associatedPerson .
+
+:contactPhone a owl:DatatypeProperty ;
+    rdfs:label "联系电话"@zh ;
+    rdfs:domain :Person ;
+    rdfs:range xsd:string .
+
+:defectDescription a owl:DatatypeProperty ;
+    rdfs:label "缺陷描述"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range xsd:string .
+
+:defectStatus a owl:DatatypeProperty ;
+    rdfs:label "缺陷状态"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range xsd:string .
+
+:discoveryDate a owl:DatatypeProperty ;
+    rdfs:label "发现日期"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range xsd:date .
+
+:equipmentCode a owl:DatatypeProperty ;
+    rdfs:label "设备编号"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range xsd:string .
+
+:equipmentName a owl:DatatypeProperty ;
+    rdfs:label "设备名称"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range xsd:string .
+
+:handledByOrder a owl:ObjectProperty ;
+    rdfs:label "对应检修工单"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range :MaintenanceOrder .
+
+:hasDefect a owl:ObjectProperty ;
+    rdfs:label "存在缺陷"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range :Defect .
+
+:hasEquipment a owl:ObjectProperty ;
+    rdfs:label "包含设备"@zh ;
+    rdfs:domain :Substation ;
+    rdfs:range :Equipment ;
+    owl:inverseOf :locatedInSubstation .
+
+:inspectedEquipment a owl:ObjectProperty ;
+    rdfs:label "巡检对象设备"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range :Equipment .
+
+:inspectionDate a owl:DatatypeProperty ;
+    rdfs:label "巡检日期"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range xsd:date .
+
+:inspectionResult a owl:DatatypeProperty ;
+    rdfs:label "巡检结论"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range xsd:string .
+
+:inspectionType a owl:DatatypeProperty ;
+    rdfs:label "巡检类型"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range xsd:string .
+
+:maintenanceMeasures a owl:DatatypeProperty ;
+    rdfs:label "检修措施"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range xsd:string .
+
+:manufacturedBy a owl:ObjectProperty ;
+    rdfs:label "生产厂商"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range :Manufacturer .
+
+:manufacturerName a owl:DatatypeProperty ;
+    rdfs:label "厂商名称"@zh ;
+    rdfs:domain :Manufacturer ;
+    rdfs:range xsd:string .
+
+:orderNo a owl:DatatypeProperty ;
+    rdfs:label "工单编号"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range xsd:string .
+
+:orderStatus a owl:DatatypeProperty ;
+    rdfs:label "工单状态"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range xsd:string .
+
+:performedBy a owl:ObjectProperty ;
+    rdfs:label "检修执行人"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range :Maintainer ;
+    rdfs:subPropertyOf :associatedPerson .
+
+:planEndDate a owl:DatatypeProperty ;
+    rdfs:label "计划结束时间"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range xsd:date .
+
+:planStartDate a owl:DatatypeProperty ;
+    rdfs:label "计划开始时间"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range xsd:date .
+
+:ratedCapacity a owl:DatatypeProperty ;
+    rdfs:label "额定容量"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range xsd:string .
+
+:ratedVoltage a owl:DatatypeProperty ;
+    rdfs:label "额定电压"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range xsd:string .
+
+:reportedBy a owl:ObjectProperty ;
+    rdfs:label "缺陷发现人"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range :Person ;
+    rdfs:subPropertyOf :associatedPerson .
+
+:staffId a owl:DatatypeProperty ;
+    rdfs:label "工号"@zh ;
+    rdfs:domain :Person ;
+    rdfs:range xsd:string .
+
+:staffName a owl:DatatypeProperty ;
+    rdfs:label "姓名"@zh ;
+    rdfs:domain :Person ;
+    rdfs:range xsd:string .
+
+:targetEquipment a owl:ObjectProperty ;
+    rdfs:label "工单针对设备"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range :Equipment .
+
+:Busbar a owl:Class ;
+    rdfs:label "母线"@zh ;
+    rdfs:subClassOf :Equipment .
+
+:Busbar_1号母线 a :Busbar ;
+    rdfs:label "1号母线"@zh ;
+    :equipmentCode "MX-2018-A01"^^xsd:string ;
+    semantica:confidence 0.9299999999999999 ;
+    semantica:text "1号母线" .
+
+:CircuitBreaker a owl:Class ;
+    rdfs:label "断路器"@zh ;
+    rdfs:subClassOf :Equipment .
+
+:CircuitBreaker_201断路器 a :CircuitBreaker ;
+    rdfs:label "201断路器"@zh ;
+    :equipmentCode "KG-2019-201"^^xsd:string ;
+    :manufacturedBy :Manufacturer_北方开关设备有限公司 ;
+    :ratedVoltage "220kV"^^xsd:string ;
+    semantica:confidence 0.9299999999999999 ;
+    semantica:text "201断路器" .
+
+:Defect_1号主变压器本体油枕油位异常偏低 a :Defect ;
+    rdfs:label "1号主变压器本体油枕油位异常偏低"@zh ;
+    :hasEquipment :Defect_渗漏点位于油枕与本体连接法兰处密封垫老化失效 ;
+    semantica:confidence 0.915 ;
+    semantica:text "1号主变压器本体油枕油位异常偏低" .
+
+:Defect_储油柜下方发现明显油渍渗漏痕迹 a :Defect ;
+    rdfs:label "储油柜下方发现明显油渍渗漏痕迹"@zh ;
+    semantica:confidence 0.915 ;
+    semantica:text "储油柜下方发现明显油渍渗漏痕迹" .
+
+:Defect_渗漏点位于油枕与本体连接法兰处密封垫老化失效 a :Defect ;
+    rdfs:label "渗漏点位于油枕与本体连接法兰处密封垫老化失效"@zh ;
+    :hasEquipment :Equipment_NBR-220-08 ;
+    semantica:confidence 0.915 ;
+    semantica:text "渗漏点位于油枕与本体连接法兰处密封垫老化失效" .
+
+:Disconnector a owl:Class ;
+    rdfs:label "隔离开关"@zh ;
+    rdfs:subClassOf :Equipment .
+
+:Disconnector_1号隔离开关 a :Disconnector ;
+    rdfs:label "1号隔离开关"@zh ;
+    :equipmentCode "GL-2018-011"^^xsd:string ;
+    semantica:confidence 0.9299999999999999 ;
+    semantica:text "1号隔离开关" .
+
+:Equipment_NBR-220-08 a :Equipment ;
+    rdfs:label "NBR-220-08"@zh ;
+    semantica:confidence 0.865 ;
+    semantica:text "NBR-220-08" .
+
+:InspectionRecord_例行巡检 a :InspectionRecord ;
+    rdfs:label "例行巡检"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "例行巡检" .
+
+:Inspector_王建国 a :Inspector ;
+    rdfs:label "王建国"@zh ;
+    :inspectedEquipment :Transformer_1号主变压器 ;
+    :performedBy :InspectionRecord_例行巡检 ;
+    :staffId "XJ-1024"^^xsd:string ;
+    semantica:confidence 0.935 ;
+    semantica:text "王建国" .
+
+:Maintainer_输变电检修一班 a :Maintainer ;
+    rdfs:label "输变电检修一班"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "输变电检修一班" .
+
+:MaintenanceOrder_JX-2026-0812 a :MaintenanceOrder ;
+    rdfs:label "JX-2026-0812"@zh ;
+    :actualCompletionDate "2026-08-13"^^xsd:date ;
+    :associatedPerson :Defect_QX-2026-0731,
+        :Maintainer_张海涛,
+        :Maintainer_李文博 ;
+    :defectStatus "缺陷已消除"^^xsd:string ;
+    :handledByOrder :Transformer_1号主变压器 ;
+    :hasDefect :Defect_QX-2026-0731 ;
+    :locatedInSubstation :Substation_龙泉220kV变电站 ;
+    :maintenanceMeasures "现场停电、放油作业，确认渗漏点位置与法兰紧固状态；更换油枕与本体连接处密封垫（型号：NBR-220-08），重新按标准力矩紧固螺栓；补充合格绝缘油至标准油位，静置后进行耐压及色谱试验；试验合格后恢复送电，连续跟踪监测24小时确认无渗漏"^^xsd:string ;
+    :orderNo "JX-2026-0812"^^xsd:string ;
+    :orderStatus "已完成"^^xsd:string ;
+    :performedBy :Maintainer_张海涛,
+        :Maintainer_李文博,
+        :Maintainer_输变电检修一班 ;
+    :planEndDate "2026-08-14"^^xsd:date ;
+    :planStartDate "2026-08-12"^^xsd:date ;
+    :targetEquipment :Transformer_1号主变压器 ;
+    semantica:confidence 0.9299999999999999 ;
+    semantica:text "JX-2026-0812" .
+
+:MajorDefect a owl:Class ;
+    rdfs:label "严重缺陷"@zh ;
+    rdfs:subClassOf :Defect .
+
+:MajorDefect_严重缺陷 a :MajorDefect ;
+    rdfs:label "严重缺陷"@zh ;
+    semantica:confidence 0.935 ;
+    semantica:text "严重缺陷" .
+
+:Manufacturer_北方开关设备有限公司 a :Manufacturer ;
+    rdfs:label "北方开关设备有限公司"@zh ;
+    semantica:confidence 0.925 ;
+    semantica:text "北方开关设备有限公司" .
+
+:Manufacturer_华光电气制造有限公司 a :Manufacturer ;
+    rdfs:label "华光电气制造有限公司"@zh ;
+    semantica:confidence 0.935 ;
+    semantica:text "华光电气制造有限公司" .
+
+:locatedInSubstation a owl:ObjectProperty ;
+    rdfs:label "所属变电站"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range :Substation .
+
+:Defect_QX-2026-0731 a :Defect ;
+    rdfs:label "QX-2026-0731"@zh ;
+    :defectDescription "1号主变压器油枕法兰密封垫老化导致的渗油缺陷"^^xsd:string,
+        "渗油"^^xsd:string ;
+    :defectStatus "已消缺完毕"^^xsd:string ;
+    :hasDefect :Defect_渗油,
+        :Transformer_1号主变压器 ;
+    :targetEquipment :Transformer_1号主变压器 ;
+    semantica:confidence 0.915 ;
+    semantica:text "QX-2026-0731" .
+
+:Defect_渗油 a :Defect ;
+    rdfs:label "渗油"@zh ;
+    semantica:confidence 0.89 ;
+    semantica:text "渗油" .
+
+:Maintainer_张海涛 a :Maintainer ;
+    rdfs:label "张海涛"@zh ;
+    :staffId "JX-2318"^^xsd:string ;
+    semantica:confidence 0.915 ;
+    semantica:text "张海涛" .
+
+:Maintainer_李文博 a :Maintainer ;
+    rdfs:label "李文博"@zh ;
+    :staffId "JX-2205"^^xsd:string ;
+    semantica:confidence 0.915 ;
+    semantica:text "李文博" .
+
+:Substation_龙泉220kV变电站 a :Substation ;
+    rdfs:label "龙泉220kV变电站"@zh ;
+    :hasEquipment :Busbar_1号母线,
+        :CircuitBreaker_201断路器,
+        :Disconnector_1号隔离开关,
+        :Transformer_1号主变压器 ;
+    semantica:confidence 0.9299999999999999 ;
+    semantica:text "龙泉220kV变电站" .
+
+:Transformer a owl:Class ;
+    rdfs:label "变压器"@zh ;
+    rdfs:subClassOf :Equipment .
+
+:Inspector a owl:Class ;
+    rdfs:label "巡检员"@zh ;
+    rdfs:subClassOf :Person .
+
+:Substation a owl:Class ;
+    rdfs:label "变电站"@zh ;
+    rdfs:comment "承载电力设备的变电站，作为设备的物理归属位置。"@zh .
+
+:associatedPerson a owl:ObjectProperty ;
+    rdfs:label "关联人员"@zh ;
+    rdfs:domain [ a owl:Class ;
+            owl:unionOf ( :Defect :MaintenanceOrder :InspectionRecord ) ] ;
+    rdfs:range :Person .
+
+:Maintainer a owl:Class ;
+    rdfs:label "检修人员"@zh ;
+    rdfs:subClassOf :Person .
+
+:Manufacturer a owl:Class ;
+    rdfs:label "设备厂商"@zh .
+
+:Transformer_1号主变压器 a :Transformer ;
+    rdfs:label "1号主变压器"@zh ;
+    :commissioningDate "2018-06-15"^^xsd:date ;
+    :defectDescription "渗漏点位于油枕与本体连接法兰处密封垫老化失效"^^xsd:string ;
+    :defectStatus "严重缺陷"^^xsd:string ;
+    :discoveryDate "2026-07-31"^^xsd:date ;
+    :equipmentCode "BY-2018-001"^^xsd:string ;
+    :handledByOrder :MaintenanceOrder_JX-2026-0812 ;
+    :hasDefect :Defect_储油柜下方发现明显油渍渗漏痕迹,
+        :Defect_渗油,
+        :MajorDefect_严重缺陷 ;
+    :hasEquipment :Defect_1号主变压器本体油枕油位异常偏低 ;
+    :locatedInSubstation :Substation_龙泉220kV变电站 ;
+    :manufacturedBy :Manufacturer_华光电气制造有限公司 ;
+    :ratedCapacity "180MVA"^^xsd:string ;
+    :ratedVoltage "220kV"^^xsd:string ;
+    :reportedBy :Inspector_王建国 ;
+    semantica:confidence 0.935 ;
+    semantica:text "1号主变压器" .
+
+:Person a owl:Class ;
+    rdfs:label "人员"@zh .
+
+:MaintenanceOrder a owl:Class ;
+    rdfs:label "检修工单"@zh ;
+    rdfs:comment "针对某一缺陷或设备发起的检修/消缺任务。"@zh .
+
+:InspectionRecord a owl:Class ;
+    rdfs:label "巡检记录"@zh ;
+    rdfs:comment "运维人员对设备进行例行或专项巡视的记录。"@zh .
+
+:Defect a owl:Class ;
+    rdfs:label "缺陷"@zh ;
+    rdfs:comment "设备在巡检或运行中发现的异常状态。"@zh .
+
+:Equipment a owl:Class ;
+    rdfs:label "设备"@zh ;
+    rdfs:comment "变电站内的一次/二次电力设备。"@zh .
+

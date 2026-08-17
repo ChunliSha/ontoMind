@@ -1,0 +1,2873 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OntoMind · 知识建模辅助抽取工具</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- 引入 Lucide 图标库 -->
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<!-- 引入 D3.js -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  :root{
+    --ink-950:#0A0D1B;
+    --ink-900:#111530;
+    --ink-800:#1B2140;
+    --ink-700:#262D52;
+    --ink-line: rgba(255,255,255,0.09);
+    --ink-line-soft: rgba(255,255,255,0.05);
+
+    --surface:#F4F5FA;
+    --card:#FFFFFF;
+    --border:#E3E6EF;
+    --border-strong:#D2D6E6;
+
+    --text-900:#161A2E;
+    --text-700:#3D4262;
+    --text-500:#6B7093;
+    --text-400:#9498B5;
+
+    --accent:#0C8F8A;
+    --accent-dark:#086F6B;
+    --accent-soft:#DFF3F1;
+
+    --class-c:#C97A1E;
+    --class-soft:#FBF0DC;
+    --prop-c:#0C8F8A;
+    --prop-soft:#DFF3F1;
+    --inst-c:#6E5CE0;
+    --inst-soft:#ECE8FC;
+
+    --danger:#D8483F;
+    --danger-soft:#FBE8E6;
+    --success:#268F58;
+    --success-soft:#E3F5EA;
+    --warning:#C1830F;
+    --warning-soft:#FBF0D9;
+    --neutral:#6B7093;
+    --neutral-soft:#EAEBF3;
+
+    --r-sm:6px; --r-md:10px; --r-lg:16px;
+    --shadow-sm:0 1px 2px rgba(15,18,35,.05);
+    --shadow-md:0 6px 20px rgba(15,18,35,.08);
+
+    --f-disp:'Space Grotesk',sans-serif;
+    --f-body:'Inter',sans-serif;
+    --f-mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family:var(--f-body); color:var(--text-900);
+    background:var(--surface); -webkit-font-smoothing:antialiased;
+  }
+  ::selection{background:var(--accent-soft); color:var(--accent-dark);}
+  ::-webkit-scrollbar{width:10px; height:10px;}
+  ::-webkit-scrollbar-thumb{background:#CBD0E3; border-radius:10px; border:3px solid var(--surface);}
+  ::-webkit-scrollbar-track{background:transparent;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important;} }
+
+  h1,h2,h3{font-family:var(--f-disp); margin:0; letter-spacing:-.01em; color:var(--text-900);}
+  p{margin:0;}
+  button{font-family:var(--f-body); cursor:pointer;}
+
+  /* ---------- shell ---------- */
+  .app-shell{display:flex; height:100vh; overflow:hidden;}
+  .sidebar{
+    width:264px; flex-shrink:0; color:var(--text-900); display:flex; flex-direction:column;
+    background:var(--card);
+    border-right:1px solid var(--border);
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px; padding:22px 20px 18px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px; flex-shrink:0;
+    background:linear-gradient(135deg,var(--accent),var(--inst-c));
+    display:flex; align-items:center; justify-content:center;
+  }
+  .brand-mark svg{width:18px; height:18px; color:#fff;}
+  .brand-name{font-family:var(--f-disp); font-weight:700; font-size:16.5px; line-height:1.15;}
+  .brand-sub{font-size:11px; color:var(--text-500); margin-top:1px; letter-spacing:.02em;}
+
+  .nav{flex:1; overflow-y:auto; padding:14px 12px; display:flex; flex-direction:column; gap:10px;}
+  .nav-num{
+    font-family:var(--f-mono); font-size:10px; color:var(--text-400); width:20px; flex-shrink:0;
+    display:inline-flex; align-items:center;
+  }
+  .nav-item{
+    display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+    background:rgba(244,245,250,.55); border:1px solid var(--border); color:var(--text-700); padding:9px 10px; border-radius:10px;
+    font-size:13.5px; font-weight:600; transition:background .15s,color .15s,border-color .15s;
+  }
+  .nav-item svg{width:16px; height:16px; flex-shrink:0; opacity:1;}
+  .nav-item:hover{background:var(--surface); color:var(--text-900); border-color:var(--border);}
+  .nav-item.active{background:var(--accent-soft); color:var(--accent-dark); border-color:rgba(12,143,138,.22); box-shadow:inset 2px 0 0 var(--accent);}
+  .nav-item.sub{padding-left:32px; font-size:13px;}
+  .nav-group{background:rgba(244,245,250,.55); border:1px solid var(--border); border-radius:12px; padding:6px;}
+  .nav-group-title{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px;
+    color:var(--text-700); font-size:13.5px; font-weight:700; cursor:pointer; user-select:none;
+  }
+  .nav-group-title:hover{background:rgba(255,255,255,.7); color:var(--text-900);}
+  .nav-group-title svg:first-of-type{width:16px; height:16px; opacity:.85;}
+  .nav-group-title .chev{width:14px; height:14px; margin-left:auto; transition:transform .18s; opacity:.6;}
+  .nav-group.collapsed .chev{transform:rotate(-90deg);}
+  .nav-group.collapsed .nav-subitems{display:none;}
+  .nav-subitems{display:flex; flex-direction:column; gap:2px; margin-top:4px;}
+
+  .sidebar-foot{
+    padding:14px 18px 18px; border-top:1px solid var(--border);
+    display:flex; align-items:center; gap:10px;
+  }
+  .foot-avatar{
+    width:30px; height:30px; border-radius:50%; background:var(--surface);
+    display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--text-700);
+    border:1px solid var(--border);
+  }
+  .foot-txt{line-height:1.25;}
+  .foot-txt .n{font-size:12.5px; font-weight:700; color:var(--text-900);}
+  .foot-txt .r{font-size:11px; color:var(--text-500);}
+
+  /* ---------- main ---------- */
+  .main{flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden;}
+  .topbar{
+    height:56px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between;
+    padding:0 28px; background:var(--card); border-bottom:1px solid var(--border);
+  }
+  .crumb{font-size:12.5px; color:var(--text-400); display:flex; align-items:center; gap:6px;}
+  .crumb b{color:var(--text-700); font-weight:600;}
+  .topbar-right{display:flex; align-items:center; gap:12px;}
+  .ws-pill{
+    display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-500);
+    background:var(--surface); border:1px solid var(--border); padding:5px 10px; border-radius:20px;
+  }
+  .ws-pill svg{width:13px; height:13px;}
+  .avatar-sm{width:28px; height:28px; border-radius:50%; background:var(--inst-soft); color:var(--inst-c); display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:700;}
+
+  .view-container{flex:1; overflow-y:auto;}
+  .view{display:none; padding:32px 36px 60px;}
+  .view.active{display:block;}
+
+  .view-head{margin-bottom:26px;}
+  .eyebrow{
+    font-family:var(--f-mono); font-size:11px; letter-spacing:.12em; color:var(--accent-dark);
+    text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:8px;
+  }
+  .eyebrow::before{content:""; width:14px; height:1px; background:var(--accent);}
+  .view-head h1{font-size:25px; font-weight:700;}
+  .view-head .lead{margin-top:8px; font-size:13.5px; color:var(--text-500); max-width:640px; line-height:1.6;}
+  .view-head-row{display:flex; align-items:flex-start; justify-content:space-between; gap:20px;}
+
+  /* buttons */
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600;
+    padding:9px 15px; border-radius:8px; border:1px solid transparent; transition:all .15s; white-space:nowrap;
+  }
+  .btn svg{width:14px; height:14px;}
+  .btn-primary{background:var(--ink-950); color:#fff;}
+  .btn-primary:hover{background:var(--accent-dark);}
+  .btn-accent{background:var(--accent); color:#fff;}
+  .btn-accent:hover{background:var(--accent-dark);}
+  .btn-secondary{background:var(--card); color:var(--text-700); border-color:var(--border-strong);}
+  .btn-secondary:hover{border-color:var(--text-400); background:var(--surface);}
+  .btn-ghost{background:transparent; color:var(--text-500); border-color:transparent;}
+  .btn-ghost:hover{background:var(--surface); color:var(--text-900);}
+  .btn-sm{padding:6px 10px; font-size:12px; border-radius:7px;}
+  .btn-icon{padding:7px; border-radius:7px;}
+  .btn[disabled]{opacity:.45; cursor:not-allowed;}
+
+  /* stat cards */
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:34px;}
+  .stat-card{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px 18px 16px;
+    box-shadow:var(--shadow-sm); transition:box-shadow .15s, transform .15s;
+  }
+  .stat-card:hover{box-shadow:var(--shadow-md); transform:translateY(-1px);}
+  .stat-top{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .stat-icon{width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center;}
+  .stat-icon svg{width:16px; height:16px;}
+  .stat-icon.c1{background:var(--accent-soft); color:var(--accent-dark);}
+  .stat-icon.c2{background:var(--class-soft); color:var(--class-c);}
+  .stat-icon.c3{background:var(--inst-soft); color:var(--inst-c);}
+  .stat-icon.c4{background:var(--prop-soft); color:var(--prop-c);}
+  .stat-trend{font-size:11px; font-weight:600; color:var(--success); display:flex; align-items:center; gap:2px;}
+  .stat-num{font-family:var(--f-disp); font-size:28px; font-weight:700; line-height:1;}
+  .stat-label{font-size:12.5px; color:var(--text-500); margin-top:6px;}
+
+  /* pipeline */
+  .pipeline-block h2{font-size:16px; margin-bottom:4px;}
+  .pipeline-sub{font-size:12.5px; color:var(--text-500); margin-bottom:20px;}
+  .pipeline{display:grid; grid-template-columns:repeat(4,1fr); gap:0; position:relative; margin-bottom:36px;}
+  .pl-step{
+    position:relative; background:var(--card); border:1px solid var(--border); padding:18px 16px 16px;
+    display:flex; flex-direction:column; gap:10px; min-height:170px;
+  }
+  .pl-step:first-child{border-radius:var(--r-lg) 0 0 var(--r-lg);}
+  .pl-step:last-child{border-radius:0 var(--r-lg) var(--r-lg) 0;}
+  .pl-step:not(:last-child){border-right:none;}
+  .pl-step::after{
+    content:""; position:absolute; right:-9px; top:38px; width:16px; height:16px; border-radius:50%;
+    background:var(--surface); border:2px solid var(--border-strong); z-index:2;
+  }
+  .pl-step:last-child::after{display:none;}
+  .pl-head{display:flex; align-items:center; gap:10px;}
+  .pl-num{font-family:var(--f-mono); font-size:11px; color:var(--text-400);}
+  .pl-icon{width:30px; height:30px; border-radius:8px; background:var(--ink-950); color:#fff; display:flex; align-items:center; justify-content:center;}
+  .pl-icon svg{width:15px; height:15px;}
+  .pl-step h3{font-size:14px; font-weight:700;}
+  .pl-desc{font-size:12px; color:var(--text-500); line-height:1.55; flex:1;}
+  .pl-link{font-size:12px; font-weight:600; color:var(--accent-dark); display:inline-flex; align-items:center; gap:4px; background:none; border:none; padding:0;}
+  .pl-link svg{width:12px; height:12px;}
+
+  /* recent activity */
+  .panel{background:var(--card); border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:var(--shadow-sm);}
+  .panel-head{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border);}
+  .panel-head h3{font-size:14.5px;}
+  .activity-row{display:flex; align-items:center; gap:12px; padding:13px 20px; border-bottom:1px solid var(--border); font-size:13px;}
+  .activity-row:last-child{border-bottom:none;}
+  .act-dot{width:8px; height:8px; border-radius:50%; flex-shrink:0;}
+  .act-txt{flex:1; color:var(--text-700);}
+  .act-txt b{color:var(--text-900); font-weight:600;}
+  .act-time{font-size:11.5px; color:var(--text-400); font-family:var(--f-mono); flex-shrink:0;}
+
+  /* badges */
+  .badge{display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 8px; border-radius:20px; white-space:nowrap;}
+  .badge svg{width:11px; height:11px;}
+  .badge.b-success{background:var(--success-soft); color:var(--success);}
+  .badge.b-warning{background:var(--warning-soft); color:var(--warning);}
+  .badge.b-danger{background:var(--danger-soft); color:var(--danger);}
+  .badge.b-neutral{background:var(--neutral-soft); color:var(--text-500);}
+  .badge.b-accent{background:var(--accent-soft); color:var(--accent-dark);}
+  .badge.b-class{background:var(--class-soft); color:var(--class-c);}
+  .badge.b-prop{background:var(--prop-soft); color:var(--prop-c);}
+  .badge.b-inst{background:var(--inst-soft); color:var(--inst-c);}
+  .dot-pulse{width:6px; height:6px; border-radius:50%; background:var(--warning); animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+  /* tables */
+  .table-wrap{overflow-x:auto;}
+  table.data-table{width:100%; border-collapse:collapse; font-size:13px;}
+  .data-table thead th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-400);
+    font-weight:600; padding:11px 16px; border-bottom:1px solid var(--border); background:var(--surface); white-space:nowrap;
+  }
+  .data-table tbody td{padding:12px 16px; border-bottom:1px solid var(--border); color:var(--text-700); vertical-align:middle;}
+  .data-table tbody tr:last-child td{border-bottom:none;}
+  .data-table tbody tr:hover{background:#FAFBFD;}
+  .cell-main{display:flex; align-items:center; gap:10px;}
+  .file-ic{width:32px; height:32px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .file-ic svg{width:15px; height:15px;}
+  .cell-title{font-weight:600; color:var(--text-900); font-size:13px;}
+  .cell-sub{font-size:11px; color:var(--text-400); font-family:var(--f-mono); margin-top:1px;}
+  .row-actions{display:flex; align-items:center; gap:4px; position:relative;}
+  .icon-btn{
+    width:28px; height:28px; border-radius:7px; border:1px solid transparent; background:transparent;
+    display:flex; align-items:center; justify-content:center; color:var(--text-500); transition:all .15s;
+  }
+  .icon-btn svg{width:14px; height:14px;}
+  .icon-btn:hover{background:var(--surface); color:var(--text-900); border-color:var(--border);}
+
+  .action-menu{
+    position:absolute; right:0; top:34px; width:190px; background:var(--card); border:1px solid var(--border);
+    border-radius:var(--r-md); box-shadow:var(--shadow-md); padding:6px; z-index:40; display:none;
+    opacity:0; transform:translateY(-4px); transition:opacity .12s, transform .12s;
+  }
+  .action-menu.open{display:block; opacity:1; transform:translateY(0);}
+  .action-menu button{
+    width:100%; display:flex; align-items:center; gap:9px; text-align:left; background:none; border:none;
+    padding:8px 9px; border-radius:6px; font-size:12.5px; color:var(--text-700);
+  }
+  .action-menu button svg{width:14px; height:14px; color:var(--text-400);}
+  .action-menu button:hover{background:var(--surface);}
+  .action-menu button.danger{color:var(--danger);}
+  .action-menu button.danger svg{color:var(--danger);}
+  .menu-divider{height:1px; background:var(--border); margin:5px 2px;}
+
+  /* checkbox */
+  .chk{width:15px; height:15px; border-radius:4px; border:1.5px solid var(--border-strong); accent-color:var(--accent); cursor:pointer;}
+
+  /* toolbar / search */
+  .toolbar{display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap;}
+  .search-box{
+    display:flex; align-items:center; gap:8px; background:var(--card); border:1px solid var(--border);
+    border-radius:8px; padding:8px 12px; font-size:12.5px; color:var(--text-400); min-width:230px;
+  }
+  .search-box svg{width:14px; height:14px;}
+  .search-box input{border:none; outline:none; background:none; font-size:12.5px; width:100%; font-family:var(--f-body); color:var(--text-900);}
+  .filter-pill{
+    display:flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--border);
+    border-radius:8px; padding:8px 12px; font-size:12.5px; color:var(--text-500); font-weight:500;
+  }
+  .filter-pill svg{width:13px; height:13px;}
+
+  body.modal-open{overflow:hidden;}
+  .modal{
+    position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center;
+    background:rgba(10,13,27,.35);
+    padding:18px;
+  }
+  .modal.open{display:flex;}
+  .modal-card{
+    width:min(520px, 100%); background:var(--card); border:1px solid var(--border);
+    border-radius:var(--r-lg); box-shadow:var(--shadow-md);
+  }
+  .modal-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 16px 12px; border-bottom:1px solid var(--border);
+  }
+  .modal-title{font-family:var(--f-disp); font-size:15.5px; font-weight:700; color:var(--text-900);}
+  .modal-sub{font-size:12px; color:var(--text-500); margin-top:4px; line-height:1.45;}
+  .modal-close{width:30px; height:30px; border-radius:8px; border:1px solid transparent; background:transparent; color:var(--text-500); display:flex; align-items:center; justify-content:center;}
+  .modal-close:hover{background:var(--surface); border-color:var(--border); color:var(--text-900);}
+  .modal-close svg{width:16px; height:16px;}
+  .modal-body{padding:14px 16px 16px;}
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .form-field{display:flex; flex-direction:column; gap:6px;}
+  .form-field.full{grid-column:1 / -1;}
+  .form-label{font-size:11.5px; font-weight:700; color:var(--text-500); letter-spacing:.02em;}
+  .form-ctl{
+    height:38px; border-radius:10px; border:1px solid var(--border);
+    background:rgba(244,245,250,.45); padding:0 12px;
+    font-size:13px; font-weight:600; color:var(--text-900); outline:none;
+    transition:border-color .15s, box-shadow .15s, background .15s;
+  }
+  .form-ctl:focus{border-color:rgba(12,143,138,.45); box-shadow:0 0 0 4px rgba(12,143,138,.12); background:var(--card);}
+  .form-ctl[data-invalid="true"]{border-color:rgba(216,72,63,.55); box-shadow:0 0 0 4px rgba(216,72,63,.12); background:var(--card);}
+  .form-ctl.textarea{height:auto; padding:10px 12px; min-height:86px; resize:vertical;}
+  .form-check{
+    display:flex; align-items:center; gap:10px;
+    height:38px; border-radius:10px; border:1px solid var(--border);
+    background:rgba(244,245,250,.45); padding:0 12px;
+    font-size:13px; font-weight:600; color:var(--text-700);
+  }
+  .form-check input{margin:0;}
+  .form-error{margin-top:10px; font-size:12px; color:var(--danger); min-height:16px;}
+  .modal-foot{display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:0 16px 16px;}
+
+  /* upload dropzone */
+  .upload-card{padding:20px; margin-bottom:22px;}
+  .upload-top{display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap;}
+  .dropzone{
+    flex:1; min-width:280px; border:1.5px dashed var(--border-strong); border-radius:var(--r-md);
+    padding:26px 20px; text-align:center; transition:all .15s; background:var(--surface);
+  }
+  .dropzone:hover{border-color:var(--accent); background:var(--accent-soft);}
+  .dropzone .dz-icon{width:38px; height:38px; border-radius:10px; background:var(--card); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; margin:0 auto 12px;}
+  .dropzone .dz-icon svg{width:18px; height:18px; color:var(--accent-dark);}
+  .dropzone h4{font-size:13.5px; font-weight:600; margin-bottom:4px;}
+  .dropzone p{font-size:11.5px; color:var(--text-400);}
+  .storage-target{width:220px; flex-shrink:0;}
+  .storage-target .label{font-size:11.5px; font-weight:600; color:var(--text-500); margin-bottom:8px; text-transform:uppercase; letter-spacing:.04em;}
+  .target-opt{
+    display:flex; align-items:center; gap:9px; padding:10px 12px; border:1px solid var(--border); border-radius:8px;
+    margin-bottom:8px; font-size:12.5px; font-weight:500; color:var(--text-700); cursor:pointer; transition:all .15s;
+  }
+  .target-opt svg{width:15px; height:15px; color:var(--text-400);}
+  .target-opt.active{border-color:var(--accent); background:var(--accent-soft); color:var(--accent-dark);}
+  .target-opt.active svg{color:var(--accent-dark);}
+  .target-opt .radio{width:14px; height:14px; border-radius:50%; border:1.5px solid var(--border-strong); margin-left:auto; flex-shrink:0; position:relative;}
+  .target-opt.active .radio{border-color:var(--accent);}
+  .target-opt.active .radio::after{content:""; position:absolute; inset:2.5px; border-radius:50%; background:var(--accent);}
+
+  /* two column layout */
+  .split{display:grid; grid-template-columns:300px 1fr; gap:18px; align-items:start;}
+  .side-panel{padding:16px;}
+  .side-title{font-size:13px; font-weight:700; margin-bottom:3px;}
+  .side-desc{font-size:11.5px; color:var(--text-400); margin-bottom:14px; line-height:1.5;}
+  .src-group-title{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-400); font-weight:700; margin:14px 0 8px;}
+  .src-group-title:first-of-type{margin-top:0;}
+  .src-item{display:flex; align-items:center; gap:9px; padding:8px 9px; border-radius:7px; font-size:12.5px; color:var(--text-700);}
+  .src-item:hover{background:var(--surface);}
+  .src-item svg{width:14px; height:14px; color:var(--text-400); flex-shrink:0;}
+  .src-item .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .src-item .ct{font-size:10.5px; color:var(--text-400); font-family:var(--f-mono);}
+
+  /* class chips (schema view) */
+  .class-list{display:flex; flex-direction:column; gap:4px;}
+  .class-chip{
+    display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:8px; border:1px solid transparent;
+    font-size:13px; font-weight:600; color:var(--text-700); position:relative; cursor:pointer;
+  }
+  .class-chip:hover{background:var(--surface);}
+  .class-chip.active{background:var(--class-soft); color:var(--class-c); border-color:#F0DBB0;}
+  .class-dot{width:8px; height:8px; border-radius:2px; background:var(--class-c); flex-shrink:0;}
+  .class-chip .cnt{margin-left:auto; font-size:10.5px; font-weight:600; color:var(--text-400); font-family:var(--f-mono);}
+  .class-chip.active .cnt{color:var(--class-c);}
+
+  .legend-row{display:flex; align-items:center; gap:16px; flex-wrap:wrap; font-size:11.5px; color:var(--text-500);}
+  .legend-item{display:flex; align-items:center; gap:6px;}
+  .legend-swatch{width:10px; height:10px; border-radius:3px;}
+  .legend-line{width:16px; height:2px; border-radius:2px;}
+
+  /* stepper (extract view) */
+  .step-grid{display:grid; grid-template-columns:1fr 1fr 1fr 1.2fr; gap:16px; margin-bottom:24px;}
+  .step-card{padding:18px;}
+  .step-card .sc-head{display:flex; align-items:center; gap:8px; margin-bottom:12px;}
+  .sc-num{width:22px; height:22px; border-radius:50%; background:var(--ink-950); color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-family:var(--f-mono);}
+  .sc-title{font-size:13px; font-weight:700;}
+  .pick-list{display:flex; flex-direction:column; gap:6px; max-height:160px; overflow-y:auto;}
+  .pick-item{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-700); padding:6px 7px; border-radius:6px;}
+  .pick-item:hover{background:var(--surface);}
+  .select-fake{
+    display:flex; align-items:center; justify-content:space-between; border:1px solid var(--border); border-radius:8px;
+    padding:10px 12px; font-size:12.5px; color:var(--text-700); font-weight:500; cursor:pointer;
+  }
+  .select-fake svg{width:14px; height:14px; color:var(--text-400);}
+
+  .progress-track{height:6px; border-radius:4px; background:var(--neutral-soft); overflow:hidden; margin:12px 0;}
+  .progress-fill{height:100%; width:68%; background:linear-gradient(90deg,var(--accent),var(--inst-c)); border-radius:4px;}
+
+  .mini-bar-row{display:flex; align-items:center; gap:10px; font-size:12px; margin-bottom:9px;}
+  .mini-bar-row .lbl{width:56px; flex-shrink:0; color:var(--text-500); font-weight:600;}
+  .mini-bar-track{flex:1; height:7px; border-radius:4px; background:var(--neutral-soft); overflow:hidden;}
+  .mini-bar-fill{height:100%; border-radius:4px; background:var(--class-c);}
+  .mini-bar-num{width:38px; text-align:right; font-family:var(--f-mono); font-size:11px; color:var(--text-400);}
+
+  /* graph view */
+  .graph-toolbar{display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; justify-content:space-between;}
+  .seg-group{display:flex; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:3px; gap:2px;}
+  .seg-btn{border:none; background:none; padding:6px 13px; border-radius:6px; font-size:12px; font-weight:600; color:var(--text-500); cursor:pointer;}
+  .seg-btn.active{background:var(--card); color:var(--text-900); box-shadow:var(--shadow-sm);}
+  .graph-split{display:grid; grid-template-columns:1fr 280px; gap:16px; align-items:start;}
+  .graph-canvas{height:480px; position:relative; overflow:hidden; background:
+      radial-gradient(circle at 1px 1px, #E4E7F1 1px, transparent 0) 0 0/22px 22px, var(--card);}
+  .graph-legend{
+    position:absolute; left:16px; bottom:16px; background:rgba(255,255,255,.92); backdrop-filter:blur(3px);
+    border:1px solid var(--border); border-radius:10px; padding:10px 14px; display:flex; gap:16px; font-size:11px; color:var(--text-500);
+  }
+  .node-detail-row{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px;}
+  .node-detail-row:last-child{border-bottom:none;}
+  .node-detail-row .k{color:var(--text-400);}
+  .node-detail-row .v{color:var(--text-900); font-weight:600; font-family:var(--f-mono); font-size:11.5px;}
+
+  @media (max-width: 1100px){
+    .stat-grid{grid-template-columns:repeat(2,1fr);}
+    .pipeline{grid-template-columns:repeat(2,1fr);}
+    .split, .graph-split{grid-template-columns:1fr;}
+    .step-grid{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (max-width: 760px){
+    .sidebar{width:76px;}
+    .brand-name,.brand-sub,.nav-item span,.nav-group-title span,.foot-txt,.nav-num{display:none;}
+    .nav-item, .nav-group-title{justify-content:center;}
+    .view{padding:22px 16px 50px;}
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><i data-lucide="git-branch"></i></div>
+      <div>
+        <div class="brand-name">OntoMind</div>
+        <div class="brand-sub">知识建模辅助抽取工具</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-view="view-home">
+        <i data-lucide="layout-dashboard"></i><span>快速指引</span>
+      </button>
+
+      <div class="nav-group" id="group-data">
+        <div class="nav-group-title" data-toggle-group="group-data">
+          <span class="nav-num">01</span>
+          <i data-lucide="database"></i><span>业务数据集成</span>
+          <i data-lucide="chevron-down" class="chev"></i>
+        </div>
+        <div class="nav-subitems">
+          <button class="nav-item sub" data-view="view-unstructured"><span>非结构化数据管理</span></button>
+          <button class="nav-item sub" data-view="view-structured"><span>结构化数据管理</span></button>
+        </div>
+      </div>
+
+      <button class="nav-item" data-view="view-schema">
+        <span class="nav-num">02</span><i data-lucide="layers"></i><span>Schema 抽取与设计</span>
+      </button>
+
+      <div class="nav-group" id="group-extract">
+        <div class="nav-group-title" data-toggle-group="group-extract">
+          <span class="nav-num">03</span>
+          <i data-lucide="sparkles"></i><span>AI 辅助抽取</span>
+          <i data-lucide="chevron-down" class="chev"></i>
+        </div>
+        <div class="nav-subitems">
+          <button class="nav-item sub" data-view="view-extract"><span>本体抽取</span></button>
+          <button class="nav-item sub" data-view="view-biz-logic"><span>业务逻辑抽取</span></button>
+        </div>
+      </div>
+
+      <button class="nav-item" data-view="view-graph">
+        <span class="nav-num">04</span><i data-lucide="network"></i><span>图谱探索</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="foot-avatar">陈</div>
+      <div class="foot-txt">
+        <div class="n">工作空间 · 电力行业</div>
+        <div class="r">知识工程师</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb" id="crumb">OntoMind <i data-lucide="chevron-right" style="width:12px;height:12px;"></i> <b>快速指引</b></div>
+      <div class="topbar-right">
+        <div class="ws-pill"><i data-lucide="folder-git-2"></i>电力设备本体项目</div>
+        <div class="avatar-sm">陈</div>
+      </div>
+    </header>
+
+    <div class="view-container">
+
+      <!-- ============ VIEW: 首页 快速指引 ============ -->
+      <section id="view-home" class="view active">
+        <div class="view-head">
+          <p class="eyebrow">Welcome</p>
+          <h1>知识建模辅助抽取工具</h1>
+          <p class="lead">从结构化数据库与非结构化文档出发，AI 辅助完成 Schema 设计、实例数据抽取，并以知识图谱形式验证成果 — 一个覆盖本体构建全流程的工作台。</p>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-top"><div class="stat-icon c1"><i data-lucide="database"></i></div><span class="stat-trend"><i data-lucide="arrow-up-right" style="width:11px;height:11px;"></i>3</span></div>
+            <div class="stat-num">12</div>
+            <div class="stat-label">已接入数据源（结构化 4 · 非结构化 8）</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top"><div class="stat-icon c2"><i data-lucide="layers"></i></div><span class="stat-trend"><i data-lucide="arrow-up-right" style="width:11px;height:11px;"></i>1</span></div>
+            <div class="stat-num">3</div>
+            <div class="stat-label">已设计 Schema（含 27 个类）</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top"><div class="stat-icon c3"><i data-lucide="boxes"></i></div><span class="stat-trend"><i data-lucide="arrow-up-right" style="width:11px;height:11px;"></i>128</span></div>
+            <div class="stat-num">1,204</div>
+            <div class="stat-label">已抽取本体实例</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-top"><div class="stat-icon c4"><i data-lucide="network"></i></div><span class="stat-trend" style="color:var(--text-400);">--</span></div>
+            <div class="stat-num">5</div>
+            <div class="stat-label">可视化图谱版本</div>
+          </div>
+        </div>
+
+        <div class="pipeline-block">
+          <h2>快速上手 · 四步构建本体</h2>
+          <p class="pipeline-sub">按顺序完成以下步骤，即可从原始数据得到一份可探索的知识图谱</p>
+          <div class="pipeline">
+            <div class="pl-step">
+              <div class="pl-head"><span class="pl-num">01</span><div class="pl-icon"><i data-lucide="database"></i></div></div>
+              <h3>业务数据集成</h3>
+              <p class="pl-desc">接入结构化数据库（PostgreSQL / MySQL / GaussDB）表数据，或上传非结构化文档，作为建模原料。</p>
+              <button class="pl-link" data-view="view-unstructured">前往数据集成 <i data-lucide="arrow-right"></i></button>
+            </div>
+            <div class="pl-step">
+              <div class="pl-head"><span class="pl-num">02</span><div class="pl-icon"><i data-lucide="layers"></i></div></div>
+              <h3>Schema 抽取与设计</h3>
+              <p class="pl-desc">选择已接入的数据，AI 自动抽取类、对象属性、数据属性，人工审视修改后确认。</p>
+              <button class="pl-link" data-view="view-schema">前往 Schema 设计 <i data-lucide="arrow-right"></i></button>
+            </div>
+            <div class="pl-step">
+              <div class="pl-head"><span class="pl-num">03</span><div class="pl-icon"><i data-lucide="sparkles"></i></div></div>
+              <h3>AI 辅助抽取</h3>
+              <p class="pl-desc">基于确认后的 Schema，从数据源中自动抽取符合约束的实例数据及业务逻辑。</p>
+              <button class="pl-link" data-view="view-extract">前往 AI 辅助抽取 <i data-lucide="arrow-right"></i></button>
+            </div>
+            <div class="pl-step">
+              <div class="pl-head"><span class="pl-num">04</span><div class="pl-icon"><i data-lucide="network"></i></div></div>
+              <h3>图谱探索</h3>
+              <p class="pl-desc">将 Schema 与实例以知识图谱形式可视化，支持 Schema 视图与实例视图独立查看。</p>
+              <button class="pl-link" data-view="view-graph">前往图谱探索 <i data-lucide="arrow-right"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>最近动态</h3><button class="btn btn-ghost btn-sm">查看全部</button></div>
+          <div class="activity-row"><span class="act-dot" style="background:var(--inst-c);"></span><span class="act-txt"><b>AI 辅助抽取</b> 完成，从「设备台账.xlsx」抽取 128 条设备实例</span><span class="act-time">10 分钟前</span></div>
+          <div class="activity-row"><span class="act-dot" style="background:var(--class-c);"></span><span class="act-txt"><b>Schema「输变电设备本体 v3」</b> 新增对象属性「属于产线」</span><span class="act-time">1 小时前</span></div>
+          <div class="activity-row"><span class="act-dot" style="background:var(--accent);"></span><span class="act-txt"><b>非结构化数据</b> 「继电保护装置说明书.pdf」已完成转本体 MD</span><span class="act-time">3 小时前</span></div>
+          <div class="activity-row"><span class="act-dot" style="background:var(--warning);"></span><span class="act-txt"><b>结构化数据源</b> 「MES_生产库」连接超时，请检查网络</span><span class="act-time">昨天 18:22</span></div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: 结构化数据管理 ============ -->
+      <section id="view-structured" class="view">
+        <div class="view-head">
+          <p class="eyebrow">Module 01 · 业务数据集成</p>
+          <div class="view-head-row">
+            <div>
+              <h1>结构化数据管理</h1>
+              <p class="lead">连接关系型数据库，浏览表结构与数据，作为 Schema 设计与实例抽取的数据来源。</p>
+            </div>
+            <button class="btn btn-primary" id="btn-add-db"><i data-lucide="plus"></i>新增数据库连接</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="search-box"><i data-lucide="search"></i><input placeholder="搜索连接名称 / 主机地址"></div>
+          <div class="filter-pill"><i data-lucide="sliders-horizontal"></i>数据库类型</div>
+          <div class="filter-pill"><i data-lucide="circle-dot"></i>状态</div>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th>连接名称</th><th>类型</th><th>主机 / 端口</th><th>数据库名</th><th>表数量</th><th>状态</th><th>最近同步</th><th>操作</th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <td class="cell-main"><div class="file-ic" style="background:#E3EEFB;color:#2C6FC9;"><i data-lucide="database"></i></div><div><div class="cell-title">生产制造主库</div><div class="cell-sub">conn_prod_01</div></div></td>
+                  <td><span class="badge b-accent">PostgreSQL</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">10.21.4.18:5432</td>
+                  <td>mes_prod</td><td>42</td>
+                  <td><span class="badge b-success"><i data-lucide="check-circle-2"></i>已连接</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-08-03 09:12</td>
+                  <td><div class="row-actions"><button class="icon-btn" title="查看表"><i data-lucide="table"></i></button><button class="icon-btn" title="编辑"><i data-lucide="pencil"></i></button><button class="icon-btn" title="删除"><i data-lucide="trash-2"></i></button></div></td>
+                </tr>
+                <tr>
+                  <td class="cell-main"><div class="file-ic" style="background:#FBEEE3;color:#C9722C;"><i data-lucide="database"></i></div><div><div class="cell-title">设备台账库</div><div class="cell-sub">conn_asset_02</div></div></td>
+                  <td><span class="badge b-neutral">MySQL</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">10.21.6.31:3306</td>
+                  <td>asset_mgmt</td><td>18</td>
+                  <td><span class="badge b-success"><i data-lucide="check-circle-2"></i>已连接</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-08-03 07:40</td>
+                  <td><div class="row-actions"><button class="icon-btn" title="查看表"><i data-lucide="table"></i></button><button class="icon-btn" title="编辑"><i data-lucide="pencil"></i></button><button class="icon-btn" title="删除"><i data-lucide="trash-2"></i></button></div></td>
+                </tr>
+                <tr>
+                  <td class="cell-main"><div class="file-ic" style="background:var(--inst-soft);color:var(--inst-c);"><i data-lucide="database"></i></div><div><div class="cell-title">MES 生产库</div><div class="cell-sub">conn_mes_03</div></div></td>
+                  <td><span class="badge b-inst">GaussDB</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">10.21.9.05:8000</td>
+                  <td>mes_realtime</td><td>—</td>
+                  <td><span class="badge b-danger"><i data-lucide="alert-circle"></i>连接失败</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">昨天 18:22</td>
+                  <td><div class="row-actions"><button class="icon-btn" title="重试"><i data-lucide="refresh-cw"></i></button><button class="icon-btn" title="编辑"><i data-lucide="pencil"></i></button><button class="icon-btn" title="删除"><i data-lucide="trash-2"></i></button></div></td>
+                </tr>
+                <tr>
+                  <td class="cell-main"><div class="file-ic" style="background:#E3EEFB;color:#2C6FC9;"><i data-lucide="database"></i></div><div><div class="cell-title">质量检测库</div><div class="cell-sub">conn_qc_04</div></div></td>
+                  <td><span class="badge b-accent">PostgreSQL</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">10.21.4.52:5432</td>
+                  <td>qc_records</td><td>9</td>
+                  <td><span class="badge b-warning"><span class="dot-pulse"></span>同步中</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">正在同步…</td>
+                  <td><div class="row-actions"><button class="icon-btn" title="查看表"><i data-lucide="table"></i></button><button class="icon-btn" title="编辑"><i data-lucide="pencil"></i></button><button class="icon-btn" title="删除"><i data-lucide="trash-2"></i></button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: 非结构化数据管理 ============ -->
+      <section id="view-unstructured" class="view">
+        <div class="view-head">
+          <p class="eyebrow">Module 01 · 业务数据集成</p>
+          <h1>非结构化数据管理</h1>
+          <p class="lead">上传文档类数据，支持本地存储与 MinIO 对象存储，并可将文件转换为标准 Markdown 或本体 Markdown，作为 Schema 与实例抽取的数据来源。</p>
+        </div>
+
+        <div class="panel upload-card">
+          <div class="upload-top">
+            <div class="dropzone">
+              <div class="dz-icon"><i data-lucide="upload-cloud"></i></div>
+              <h4>拖拽文件到此处，或点击选择文件</h4>
+              <p>支持 PDF / DOCX / TXT / MD / XLSX，单个文件不超过 200MB</p>
+              <button class="btn btn-secondary btn-sm" style="margin-top:14px;"><i data-lucide="plus"></i>选择文件</button>
+            </div>
+            <div class="storage-target">
+              <div class="label">存储目标</div>
+              <div class="target-opt active" data-target-opt>
+                <i data-lucide="hard-drive"></i>本地存储<span class="radio"></span>
+              </div>
+              <div class="target-opt" data-target-opt>
+                <i data-lucide="cloud"></i>MinIO 对象存储<span class="radio"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="search-box"><i data-lucide="search"></i><input placeholder="搜索文件名"></div>
+          <div class="filter-pill"><i data-lucide="sliders-horizontal"></i>文件类型</div>
+          <div class="filter-pill"><i data-lucide="circle-dot"></i>状态</div>
+          <div class="filter-pill"><i data-lucide="hard-drive"></i>存储位置</div>
+          <div style="flex:1;"></div>
+          <button class="btn btn-secondary btn-sm"><i data-lucide="download"></i>批量下载</button>
+        </div>
+
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr>
+                <th style="width:34px;"><input type="checkbox" class="chk"></th>
+                <th>文件名</th><th>文件类型</th><th>存储位置</th><th>大小</th><th>状态</th><th>上传时间</th><th style="width:120px;">操作</th>
+              </tr></thead>
+              <tbody id="unstructured-tbody">
+
+                <tr>
+                  <td><input type="checkbox" class="chk"></td>
+                  <td class="cell-main"><div class="file-ic" style="background:#FBE7E5;color:#C7473E;"><i data-lucide="file-text"></i></div><div><div class="cell-title">继电保护装置说明书.pdf</div><div class="cell-sub">doc_a1f39c</div></div></td>
+                  <td><span class="badge b-danger">PDF</span></td>
+                  <td><span class="badge b-neutral"><i data-lucide="hard-drive"></i>本地</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">18.4 MB</td>
+                  <td><span class="badge b-success"><i data-lucide="check-circle-2"></i>已就绪</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-08-02 16:04</td>
+                  <td>
+                    <div class="row-actions">
+                      <button class="icon-btn" title="预览"><i data-lucide="eye"></i></button>
+                      <button class="icon-btn" title="下载"><i data-lucide="download"></i></button>
+                      <button class="icon-btn" data-menu-toggle title="更多"><i data-lucide="more-vertical"></i></button>
+                      <div class="action-menu">
+                        <button><i data-lucide="file-output"></i>转标准 MD</button>
+                        <button><i data-lucide="wand-2"></i>转本体 MD</button>
+                        <button><i data-lucide="text-cursor-input"></i>重命名</button>
+                        <button><i data-lucide="pencil"></i>编辑</button>
+                        <button><i data-lucide="table"></i>构建表 SQL</button>
+                        <div class="menu-divider"></div>
+                        <button class="danger"><i data-lucide="trash-2"></i>删除</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td><input type="checkbox" class="chk"></td>
+                  <td class="cell-main"><div class="file-ic" style="background:#E3EEFB;color:#2C6FC9;"><i data-lucide="file-text"></i></div><div><div class="cell-title">变电站巡检工艺规程.docx</div><div class="cell-sub">doc_9e02b1</div></div></td>
+                  <td><span class="badge b-accent">DOCX</span></td>
+                  <td><span class="badge b-inst"><i data-lucide="cloud"></i>MinIO</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">4.2 MB</td>
+                  <td><span class="badge b-warning"><span class="dot-pulse"></span>解析中</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-08-02 14:51</td>
+                  <td>
+                    <div class="row-actions">
+                      <button class="icon-btn" title="预览"><i data-lucide="eye"></i></button>
+                      <button class="icon-btn" title="下载"><i data-lucide="download"></i></button>
+                      <button class="icon-btn" data-menu-toggle title="更多"><i data-lucide="more-vertical"></i></button>
+                      <div class="action-menu">
+                        <button><i data-lucide="file-output"></i>转标准 MD</button>
+                        <button><i data-lucide="wand-2"></i>转本体 MD</button>
+                        <button><i data-lucide="text-cursor-input"></i>重命名</button>
+                        <button><i data-lucide="pencil"></i>编辑</button>
+                        <button><i data-lucide="table"></i>构建表 SQL</button>
+                        <div class="menu-divider"></div>
+                        <button class="danger"><i data-lucide="trash-2"></i>删除</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td><input type="checkbox" class="chk"></td>
+                  <td class="cell-main"><div class="file-ic" style="background:var(--prop-soft);color:var(--prop-c);"><i data-lucide="file-code"></i></div><div><div class="cell-title">继电保护装置说明书.md</div><div class="cell-sub">doc_a1f39c_ont</div></div></td>
+                  <td><span class="badge b-prop">本体 MD</span></td>
+                  <td><span class="badge b-neutral"><i data-lucide="hard-drive"></i>本地</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">2.1 MB</td>
+                  <td><span class="badge b-success"><i data-lucide="check-circle-2"></i>已就绪</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-08-02 16:20</td>
+                  <td>
+                    <div class="row-actions">
+                      <button class="icon-btn" title="预览"><i data-lucide="eye"></i></button>
+                      <button class="icon-btn" title="下载"><i data-lucide="download"></i></button>
+                      <button class="icon-btn" data-menu-toggle title="更多"><i data-lucide="more-vertical"></i></button>
+                      <div class="action-menu">
+                        <button><i data-lucide="file-output"></i>转标准 MD</button>
+                        <button><i data-lucide="wand-2"></i>转本体 MD</button>
+                        <button><i data-lucide="text-cursor-input"></i>重命名</button>
+                        <button><i data-lucide="pencil"></i>编辑</button>
+                        <button><i data-lucide="table"></i>构建表 SQL</button>
+                        <div class="menu-divider"></div>
+                        <button class="danger"><i data-lucide="trash-2"></i>删除</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td><input type="checkbox" class="chk"></td>
+                  <td class="cell-main"><div class="file-ic" style="background:var(--neutral-soft);color:var(--text-500);"><i data-lucide="file-type"></i></div><div><div class="cell-title">设备缺陷记录_2026H1.txt</div><div class="cell-sub">doc_77dd42</div></div></td>
+                  <td><span class="badge b-neutral">TXT</span></td>
+                  <td><span class="badge b-neutral"><i data-lucide="hard-drive"></i>本地</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">640 KB</td>
+                  <td><span class="badge b-neutral"><i data-lucide="clock"></i>待处理</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-08-01 11:03</td>
+                  <td>
+                    <div class="row-actions">
+                      <button class="icon-btn" title="预览"><i data-lucide="eye"></i></button>
+                      <button class="icon-btn" title="下载"><i data-lucide="download"></i></button>
+                      <button class="icon-btn" data-menu-toggle title="更多"><i data-lucide="more-vertical"></i></button>
+                      <div class="action-menu">
+                        <button><i data-lucide="file-output"></i>转标准 MD</button>
+                        <button><i data-lucide="wand-2"></i>转本体 MD</button>
+                        <button><i data-lucide="text-cursor-input"></i>重命名</button>
+                        <button><i data-lucide="pencil"></i>编辑</button>
+                        <button><i data-lucide="table"></i>构建表 SQL</button>
+                        <div class="menu-divider"></div>
+                        <button class="danger"><i data-lucide="trash-2"></i>删除</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td><input type="checkbox" class="chk"></td>
+                  <td class="cell-main"><div class="file-ic" style="background:#FBE7E5;color:#C7473E;"><i data-lucide="file-x"></i></div><div><div class="cell-title">供应商资质证明.pdf</div><div class="cell-sub">doc_1c650a</div></div></td>
+                  <td><span class="badge b-danger">PDF</span></td>
+                  <td><span class="badge b-inst"><i data-lucide="cloud"></i>MinIO</span></td>
+                  <td style="font-family:var(--f-mono);font-size:12px;">9.8 MB</td>
+                  <td><span class="badge b-danger"><i data-lucide="alert-circle"></i>解析失败</span></td>
+                  <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">2026-07-31 09:15</td>
+                  <td>
+                    <div class="row-actions">
+                      <button class="icon-btn" title="预览"><i data-lucide="eye"></i></button>
+                      <button class="icon-btn" title="下载"><i data-lucide="download"></i></button>
+                      <button class="icon-btn" data-menu-toggle title="更多"><i data-lucide="more-vertical"></i></button>
+                      <div class="action-menu">
+                        <button><i data-lucide="file-output"></i>转标准 MD</button>
+                        <button><i data-lucide="wand-2"></i>转本体 MD</button>
+                        <button><i data-lucide="text-cursor-input"></i>重命名</button>
+                        <button><i data-lucide="pencil"></i>编辑</button>
+                        <button><i data-lucide="table"></i>构建表 SQL</button>
+                        <div class="menu-divider"></div>
+                        <button class="danger"><i data-lucide="trash-2"></i>删除</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: Schema 抽取与设计 ============ -->
+      <section id="view-schema" class="view">
+        <div class="view-head">
+          <p class="eyebrow">Module 02</p>
+          <h1>Schema 抽取与设计</h1>
+          <p class="lead">选择已接入的数据，AI 自动抽取类、对象属性与数据属性；可在右侧对结果进行审视与修改，确认后形成正式 Schema。</p>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap;">
+          <div class="seg-group" style="padding:3px;">
+            <button class="seg-btn active" data-schema-tab="workspace">工作区</button>
+            <button class="seg-btn" data-schema-tab="manage">Schema 管理</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-400);" id="schema-status">状态：待抽取</div>
+        </div>
+
+        <div class="split">
+          <!-- left: data source picker -->
+          <div class="panel side-panel">
+            <div class="side-title">① 选择用于抽取的数据</div>
+            <div class="side-desc">勾选来自「业务数据集成」的非结构化文档</div>
+
+            <div class="src-group-title">非结构化数据</div>
+            <label class="src-item"><input type="checkbox" class="chk" checked><i data-lucide="file-code"></i><span class="nm">继电保护装置说明书.md</span><span class="ct">本体MD</span></label>
+            <label class="src-item"><input type="checkbox" class="chk"><i data-lucide="file-text"></i><span class="nm">变电站巡检工艺规程.docx</span><span class="ct">解析中</span></label>
+
+            <button class="btn btn-accent" id="btn-schema-extract" style="width:100%; justify-content:center; margin-top:16px;"><i data-lucide="sparkles"></i>开始抽取</button>
+            <p style="font-size:11px;color:var(--text-400);margin-top:8px;">已选择 1 个数据源，预计耗时 1–2 分钟</p>
+          </div>
+
+          <!-- right: schema workspace -->
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="panel" id="schema-workspace-panel">
+              <div class="panel-head">
+                <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                  <h3 style="margin:0;">Schema 工作区</h3>
+                  <select class="form-ctl" id="schema-select" style="height:30px;padding:0 10px;font-size:12px;font-weight:700;max-width:320px;"></select>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                  <button class="btn btn-secondary btn-sm" id="btn-export-ttl"><i data-lucide="download"></i>导出 TTL</button>
+                  <button class="btn btn-secondary btn-sm" id="btn-add-class"><i data-lucide="plus"></i>新增类</button>
+                  <button class="btn btn-primary btn-sm" id="btn-save-schema"><i data-lucide="check"></i>保存 Schema</button>
+                </div>
+              </div>
+
+              <div style="display:grid; grid-template-columns:190px 1fr;">
+                <div style="border-right:1px solid var(--border); padding:14px 10px;">
+                  <div class="class-list" id="schema-class-list">
+                    <div class="class-chip active" data-class="设备"><span class="class-dot"></span>设备<span class="cnt">8</span></div>
+                    <div class="class-chip" data-class="产线"><span class="class-dot"></span>产线<span class="cnt">5</span></div>
+                    <div class="class-chip" data-class="工序"><span class="class-dot"></span>工序<span class="cnt">6</span></div>
+                    <div class="class-chip" data-class="缺陷记录"><span class="class-dot"></span>缺陷记录<span class="cnt">4</span></div>
+                    <div class="class-chip" data-class="供应商"><span class="class-dot"></span>供应商<span class="cnt">3</span></div>
+                  </div>
+                </div>
+
+                <div style="padding:16px 20px;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;">
+                    <div>
+                      <div style="font-size:14px;font-weight:700;"><span id="schema-current-class">设备</span> <span class="badge b-class" style="margin-left:6px;">Class</span></div>
+                      <div style="font-size:11.5px;color:var(--text-400);margin-top:3px;" id="schema-current-class-meta">rdfs:label = "设备" · 来自 2 个数据源</div>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-add-prop"><i data-lucide="plus"></i>添加属性</button>
+                  </div>
+
+                  <div class="table-wrap">
+                    <table class="data-table">
+                      <thead><tr><th>属性名</th><th>属性类型</th><th>取值 / 数据类型</th><th>必填</th><th>来源</th><th style="width:80px;">操作</th></tr></thead>
+                      <tbody id="schema-prop-tbody">
+                      <tr>
+                        <td class="cell-title">设备编号</td>
+                        <td><span class="badge b-prop">数据属性</span></td>
+                        <td style="font-family:var(--f-mono);font-size:12px;">xsd:string</td>
+                        <td><i data-lucide="check" style="width:14px;height:14px;color:var(--success);"></i></td>
+                        <td><span class="badge b-accent"><i data-lucide="sparkles"></i>AI · 96%</span></td>
+                        <td><div class="row-actions"><button class="icon-btn" data-prop-action="edit"><i data-lucide="pencil"></i></button><button class="icon-btn" data-prop-action="delete"><i data-lucide="trash-2"></i></button></div></td>
+                      </tr>
+                      <tr>
+                        <td class="cell-title">运行状态</td>
+                        <td><span class="badge b-prop">数据属性</span></td>
+                        <td style="font-family:var(--f-mono);font-size:12px;">xsd:string</td>
+                        <td></td>
+                        <td><span class="badge b-accent"><i data-lucide="sparkles"></i>AI · 91%</span></td>
+                        <td><div class="row-actions"><button class="icon-btn" data-prop-action="edit"><i data-lucide="pencil"></i></button><button class="icon-btn" data-prop-action="delete"><i data-lucide="trash-2"></i></button></div></td>
+                      </tr>
+                      <tr>
+                        <td class="cell-title">投运日期</td>
+                        <td><span class="badge b-prop">数据属性</span></td>
+                        <td style="font-family:var(--f-mono);font-size:12px;">xsd:dateTime</td>
+                        <td></td>
+                        <td><span class="badge b-accent"><i data-lucide="sparkles"></i>AI · 88%</span></td>
+                        <td><div class="row-actions"><button class="icon-btn" data-prop-action="edit"><i data-lucide="pencil"></i></button><button class="icon-btn" data-prop-action="delete"><i data-lucide="trash-2"></i></button></div></td>
+                      </tr>
+                      <tr>
+                        <td class="cell-title">属于产线</td>
+                        <td><span class="badge b-class">对象属性</span></td>
+                        <td style="font-family:var(--f-mono);font-size:12px;">range: 产线</td>
+                        <td><i data-lucide="check" style="width:14px;height:14px;color:var(--success);"></i></td>
+                        <td><span class="badge b-accent"><i data-lucide="sparkles"></i>AI · 94%</span></td>
+                        <td><div class="row-actions"><button class="icon-btn" data-prop-action="edit"><i data-lucide="pencil"></i></button><button class="icon-btn" data-prop-action="delete"><i data-lucide="trash-2"></i></button></div></td>
+                      </tr>
+                      <tr>
+                        <td class="cell-title">生产厂商</td>
+                        <td><span class="badge b-class">对象属性</span></td>
+                        <td style="font-family:var(--f-mono);font-size:12px;">range: 供应商</td>
+                        <td></td>
+                        <td><span class="badge b-neutral"><i data-lucide="user"></i>人工新增</span></td>
+                        <td><div class="row-actions"><button class="icon-btn" data-prop-action="edit"><i data-lucide="pencil"></i></button><button class="icon-btn" data-prop-action="delete"><i data-lucide="trash-2"></i></button></div></td>
+                      </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel" id="schema-manage-panel" style="display:none;">
+              <div class="panel-head">
+                <h3>Schema 管理</h3>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                  <button class="btn btn-secondary btn-sm" id="btn-schema-refresh"><i data-lucide="refresh-cw"></i>刷新</button>
+                </div>
+              </div>
+              <div style="padding:18px 20px;">
+                <div class="toolbar" style="margin-bottom:14px;">
+                  <div class="search-box" style="margin:0;"><i data-lucide="search"></i><input id="schema-mgmt-search" placeholder="搜索 Schema 名称"></div>
+                  <div style="flex:1;"></div>
+                  <input type="file" id="schema-import-file" accept=".ttl" style="display:none;">
+                  <button class="btn btn-secondary btn-sm" id="btn-schema-import" onclick="document.getElementById('schema-import-file').click()"><i data-lucide="upload"></i>导入 TTL</button>
+                  <button class="btn btn-secondary btn-sm" id="btn-schema-new"><i data-lucide="plus"></i>新建</button>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table">
+                    <thead><tr><th>名称</th><th>类</th><th>属性</th><th>更新时间</th><th style="width:160px;">操作</th></tr></thead>
+                    <tbody id="schema-mgmt-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: 本体抽取 ============ -->
+      <section id="view-extract" class="view">
+        <div class="view-head">
+          <p class="eyebrow">Module 03-A</p>
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+            <div>
+              <h1>本体抽取</h1>
+              <p class="lead">按照目标 Schema，从结构化数据库或非结构化文档中抽取本体实例与业务逻辑。</p>
+            </div>
+            <div class="seg-group" style="padding:3px;">
+              <button class="seg-btn active" data-extract-tab="unstruct">非结构化抽取</button>
+              <button class="seg-btn" data-extract-tab="struct">结构化抽取</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 非结构化抽取 Pipeline (Default) -->
+        <div class="step-grid extract-pipeline" id="pipe-unstruct">
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">1</span><span class="sc-title">选择文档数据</span></div>
+            <div class="pick-list">
+              <label class="pick-item"><input type="checkbox" class="chk" checked>继电保护装置说明书.md</label>
+              <label class="pick-item"><input type="checkbox" class="chk">变电站巡检工艺规程.docx</label>
+              <label class="pick-item"><input type="checkbox" class="chk" checked>设备缺陷记录_2026H1.txt</label>
+            </div>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">2</span><span class="sc-title">选择目标 Schema</span></div>
+            <div class="select-fake"><span>输变电设备本体 v3</span><i data-lucide="chevron-down"></i></div>
+            <p style="font-size:11.5px;color:var(--text-400);margin-top:10px;line-height:1.6;">包含 5 个类 · 26 个数据属性 · 8 个对象属性</p>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">3</span><span class="sc-title">AI 抽取配置</span></div>
+            <p style="font-size:11.5px;color:var(--text-500);margin-bottom:8px;line-height:1.5;">配置大模型推理参数、置信度阈值及高级抽取规则。</p>
+            <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;"><i data-lucide="sliders-horizontal"></i>高级抽取配置</button>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-400);">
+              <i data-lucide="check" style="width:14px;height:14px;color:var(--success);"></i> 模型: 自动寻优 / 阈值: 0.8
+            </div>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">4</span><span class="sc-title">开始抽取</span></div>
+            <p style="font-size:12px;color:var(--text-500);line-height:1.6;">AI 正在阅读文档并抽取实例…</p>
+            <div class="progress-track"><div class="progress-fill" style="width:25%;"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-400);"><span>文档 1 / 2</span><span>预计剩余 3 分钟</span></div>
+            <button class="btn btn-accent" style="width:100%;justify-content:center;margin-top:12px;"><i data-lucide="sparkles"></i>启动 AI 抽取</button>
+          </div>
+        </div>
+
+        <!-- 结构化抽取 Pipeline -->
+        <div class="step-grid extract-pipeline" id="pipe-struct" style="display:none;">
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">1</span><span class="sc-title">选择数据源表</span></div>
+            <div class="pick-list">
+              <label class="pick-item"><input type="checkbox" class="chk" checked>asset_mgmt.device_ledger</label>
+              <label class="pick-item"><input type="checkbox" class="chk">mes_prod.production_line</label>
+              <label class="pick-item"><input type="checkbox" class="chk">qc_records.inspection</label>
+            </div>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">2</span><span class="sc-title">选择目标 Schema</span></div>
+            <div class="select-fake"><span>输变电设备本体 v3</span><i data-lucide="chevron-down"></i></div>
+            <p style="font-size:11.5px;color:var(--text-400);margin-top:10px;line-height:1.6;">包含 5 个类 · 26 个数据属性 · 8 个对象属性</p>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">3</span><span class="sc-title">映射配置</span></div>
+            <p style="font-size:11.5px;color:var(--text-500);margin-bottom:8px;line-height:1.5;">建立源表字段到目标 Schema 属性的映射规则。</p>
+            <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;" id="btn-config-mapping"><i data-lucide="settings-2"></i>配置字段映射</button>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--success);">
+              <i data-lucide="check-circle-2" style="width:14px;height:14px;"></i> asset_mgmt.device_ledger (已配置)
+            </div>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">4</span><span class="sc-title">开始抽取</span></div>
+            <p style="font-size:12px;color:var(--text-500);line-height:1.6;">正在基于映射规则转换实例…</p>
+            <div class="progress-track"><div class="progress-fill"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-400);"><span>已处理 872 / 1,280 条</span><span>预计剩余 40 秒</span></div>
+            <button class="btn btn-accent" style="width:100%;justify-content:center;margin-top:12px;" disabled><i data-lucide="loader"></i>抽取中…</button>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-head">
+            <h3>抽取结果统计</h3>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm"><i data-lucide="download"></i>导出 TTL</button>
+              <button class="btn btn-primary btn-sm" onclick="document.querySelector('[data-view=\'view-graph\']').click()"><i data-lucide="network"></i>在图谱中查看</button>
+            </div>
+          </div>
+          <div style="padding:18px 20px;">
+            <div class="mini-bar-row"><span class="lbl">设备</span><div class="mini-bar-track"><div class="mini-bar-fill" style="width:82%;"></div></div><span class="mini-bar-num">823</span></div>
+            <div class="mini-bar-row"><span class="lbl">产线</span><div class="mini-bar-track"><div class="mini-bar-fill" style="width:22%;background:var(--prop-c);"></div></div><span class="mini-bar-num">218</span></div>
+            <div class="mini-bar-row"><span class="lbl">工序</span><div class="mini-bar-track"><div class="mini-bar-fill" style="width:12%;background:var(--inst-c);"></div></div><span class="mini-bar-num">96</span></div>
+            <div class="mini-bar-row"><span class="lbl">缺陷记录</span><div class="mini-bar-track"><div class="mini-bar-fill" style="width:7%;background:var(--warning);"></div></div><span class="mini-bar-num">67</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>实例数据预览</h3></div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th>类型</th><th>实例名称</th><th>关键属性</th><th>来源数据</th><th>置信度</th></tr></thead>
+              <tbody>
+                <tr><td><span class="badge b-class">设备</span></td><td class="cell-title">#GY-2201 主变压器</td><td style="font-size:12px;color:var(--text-500);">运行状态=在运 · 投运日期=2019-03</td><td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">device_ledger#row882</td><td><span class="badge b-success">97%</span></td></tr>
+                <tr><td><span class="badge b-class">设备</span></td><td class="cell-title">#DK-0517 断路器</td><td style="font-size:12px;color:var(--text-500);">运行状态=检修 · 属于产线=1号变电站</td><td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">继电保护说明书.md#p14</td><td><span class="badge b-success">93%</span></td></tr>
+                <tr><td><span class="badge b-inst">产线</span></td><td class="cell-title">1号变电站 · 220kV 母线</td><td style="font-size:12px;color:var(--text-500);">所属区域=华东</td><td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">production_line#row12</td><td><span class="badge b-warning">78%</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: 业务逻辑抽取 ============ -->
+      <section id="view-biz-logic" class="view">
+        <div class="view-head">
+          <p class="eyebrow">Module 03-B</p>
+          <h1>业务逻辑抽取</h1>
+          <p class="lead">基于已抽取的本体知识和非结构化文档（如工单、规程），由大模型自动提取隐含的因果关系、条件约束等业务逻辑，并以 JSON 格式输出。</p>
+        </div>
+        
+        <div class="step-grid extract-pipeline" id="pipe-biz-logic">
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">1</span><span class="sc-title">选择参考本体</span></div>
+            <div class="select-fake"><span>输变电设备本体 v3 (含实例)</span><i data-lucide="chevron-down"></i></div>
+            <p style="font-size:11.5px;color:var(--text-400);margin-top:10px;line-height:1.6;">作为业务逻辑中实体与属性的基准参照。</p>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">2</span><span class="sc-title">选择业务文档</span></div>
+            <div class="pick-list">
+              <label class="pick-item"><input type="checkbox" class="chk" checked>2026年Q1变压器检修工单.pdf</label>
+              <label class="pick-item"><input type="checkbox" class="chk" checked>断路器异常跳闸分析报告.docx</label>
+              <label class="pick-item"><input type="checkbox" class="chk">运维排班与调度规程.txt</label>
+            </div>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">3</span><span class="sc-title">逻辑抽取配置</span></div>
+            <p style="font-size:11.5px;color:var(--text-500);margin-bottom:8px;line-height:1.5;">设定需抽取的业务逻辑类型与格式规范。</p>
+            <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;"><i data-lucide="sliders-horizontal"></i>抽取规则设置</button>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text-400);">
+              <i data-lucide="check" style="width:14px;height:14px;color:var(--success);"></i> 目标格式: JSON / 含因果推理
+            </div>
+          </div>
+
+          <div class="panel step-card">
+            <div class="sc-head"><span class="sc-num">4</span><span class="sc-title">开始抽取</span></div>
+            <p style="font-size:12px;color:var(--text-500);line-height:1.6;">AI 正在分析工单语境与本体实体…</p>
+            <div class="progress-track"><div class="progress-fill" style="width:100%;"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-400);"><span>处理完成</span><span>耗时 12 秒</span></div>
+            <button class="btn btn-secondary" style="width:100%;justify-content:center;margin-top:12px;"><i data-lucide="rotate-cw"></i>重新抽取</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>业务逻辑抽取结果</h3>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm"><i data-lucide="copy"></i>复制 JSON</button>
+              <button class="btn btn-primary btn-sm"><i data-lucide="download"></i>导出文件</button>
+            </div>
+          </div>
+          <div style="padding:16px 20px;">
+            <pre style="background:#1E293B; color:#A6ACCD; padding:16px; border-radius:8px; font-family:var(--f-mono); font-size:12.5px; overflow-x:auto; line-height:1.6; margin:0;">
+{
+  "business_logic": [
+    {
+      "rule_id": "rule_001",
+      "type": "causality",
+      "description": "当主变压器油温超过85度时，可能导致绝缘老化加速，引发轻瓦斯报警。",
+      "condition": {
+        "subject": "主变压器",
+        "attribute": "油温",
+        "operator": ">",
+        "value": "85℃"
+      },
+      "consequence": [
+        "绝缘老化加速",
+        "轻瓦斯报警"
+      ],
+      "source_doc": "断路器异常跳闸分析报告.docx"
+    },
+    {
+      "rule_id": "rule_002",
+      "type": "constraint",
+      "description": "断路器SF6气体压力低于0.4MPa时，必须立即闭锁分合闸操作。",
+      "condition": {
+        "subject": "断路器",
+        "attribute": "SF6气体压力",
+        "operator": "<",
+        "value": "0.4MPa"
+      },
+      "action_required": "闭锁分合闸操作",
+      "severity": "critical",
+      "source_doc": "2026年Q1变压器检修工单.pdf"
+    }
+  ]
+}</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ VIEW: 图谱探索 ============ -->
+      <section id="view-graph" class="view">
+        <div class="view-head">
+          <p class="eyebrow">Module 04</p>
+          <h1>图谱探索</h1>
+          <p class="lead">选择已生成的 TTL 文件，将 Schema 与实例以知识图谱形式可视化，支持 Schema 视图与实例视图独立查看。</p>
+        </div>
+
+        <div class="graph-toolbar">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <div class="select-fake" style="min-width:220px;"><span><i data-lucide="file-code" style="width:13px;height:13px;margin-right:6px;vertical-align:-2px;"></i>输变电设备本体_v3_20260803.ttl</span><i data-lucide="chevron-down"></i></div>
+            <div class="seg-group">
+              <button class="seg-btn active" data-graph-mode="mixed">混合视图</button>
+              <button class="seg-btn" data-graph-mode="schema">Schema 视图</button>
+              <button class="seg-btn" data-graph-mode="instance">实例视图</button>
+            </div>
+          </div>
+          <div class="search-box" style="min-width:200px;"><i data-lucide="search"></i><input placeholder="搜索节点 / 实例"></div>
+        </div>
+
+        <div class="graph-split">
+          <div class="panel graph-canvas" id="graph-canvas">
+            <!-- svg container for d3 -->
+            <svg id="d3-graph-svg" width="100%" height="100%"></svg>
+            <div class="graph-legend">
+              <div class="legend-item"><span class="legend-swatch" style="background:#FBF0DC;border:1.5px solid #C97A1E;"></span>类</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#E0F5F4;border:1.5px solid #0C8F8A;border-radius:50%;"></span>对象属性</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#EBF3FC;border:1.5px solid #3A76D2;border-radius:50%;"></span>数据属性</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#ECE8FC;border:1.5px solid #6E5CE0;border-radius:50%;"></span>实例</div>
+              <div class="legend-item"><span class="legend-line" style="background:#94A3B8;"></span>关系连线</div>
+            </div>
+          </div>
+
+          <div class="panel side-panel">
+            <div class="side-title">节点详情</div>
+            <div class="side-desc">点击画布中的节点查看详细信息</div>
+            <div id="node-detail-content">
+              <div style="font-size:12px; color:var(--text-400); text-align:center; margin-top:20px;">请在左侧选择一个节点</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="db-modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="db-modal-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="db-modal-title">添加数据源</div>
+        <div class="modal-sub">填写连接信息后点击确定</div>
+      </div>
+      <button class="modal-close" type="button" id="db-modal-close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid" id="db-form">
+        <div class="form-field full">
+          <div class="form-label">名称</div>
+          <input class="form-ctl" id="db-name" placeholder="例如：生产制造主库" autocomplete="off">
+        </div>
+
+        <div class="form-field full">
+          <div class="form-label">数据库类型</div>
+          <select class="form-ctl" id="db-type">
+            <option value="MySQL">MySQL</option>
+            <option value="Postgres">Postgres</option>
+            <option value="GaussDB">GaussDB</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <div class="form-label">主机</div>
+          <input class="form-ctl" id="db-host" placeholder="例如：10.21.4.18" autocomplete="off" inputmode="decimal">
+        </div>
+        <div class="form-field">
+          <div class="form-label">端口</div>
+          <input class="form-ctl" id="db-port" placeholder="例如：5432" autocomplete="off" inputmode="numeric">
+        </div>
+
+        <div class="form-field full">
+          <div class="form-label">数据库名</div>
+          <input class="form-ctl" id="db-database" placeholder="例如：mes_prod" autocomplete="off">
+        </div>
+
+        <div class="form-field">
+          <div class="form-label">用户名</div>
+          <input class="form-ctl" id="db-user" placeholder="例如：readonly_user" autocomplete="username">
+        </div>
+        <div class="form-field">
+          <div class="form-label">密码</div>
+          <input class="form-ctl" id="db-password" type="password" placeholder="请输入密码" autocomplete="current-password">
+        </div>
+      </div>
+
+      <div class="form-error" id="db-form-error"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" type="button" id="db-cancel">取消</button>
+      <button class="btn btn-accent" type="button" id="db-confirm">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="schema-class-modal" aria-hidden="true">
+  <div class="modal-card" style="width:min(560px, 100%);" role="dialog" aria-modal="true" aria-labelledby="schema-class-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="schema-class-title">新增类</div>
+        <div class="modal-sub">用于描述一个可复用的概念（owl:Class），建议先补齐名称与父类，再逐步添加属性</div>
+      </div>
+      <button class="modal-close" type="button" id="schema-class-close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-field full">
+          <div class="form-label">类名称（rdfs:label）</div>
+          <input class="form-ctl" id="schema-class-label" placeholder="例如：变压器" autocomplete="off">
+        </div>
+
+        <div class="form-field full">
+          <div class="form-label">类标识（LocalName，可选）</div>
+          <input class="form-ctl" id="schema-class-local" placeholder="例如：Transformer" autocomplete="off">
+        </div>
+
+        <div class="form-field full">
+          <div class="form-label">父类（rdfs:subClassOf）</div>
+          <select class="form-ctl" id="schema-class-parent"></select>
+        </div>
+
+        <div class="form-field full">
+          <div class="form-label">描述（rdfs:comment，可选）</div>
+          <textarea class="form-ctl textarea" id="schema-class-desc" placeholder="用途、边界、与相近概念的区别…"></textarea>
+        </div>
+      </div>
+
+      <div class="form-error" id="schema-class-error"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" type="button" id="schema-class-cancel">取消</button>
+      <button class="btn btn-accent" type="button" id="schema-class-confirm">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="schema-prop-modal" aria-hidden="true">
+  <div class="modal-card" style="width:min(620px, 100%);" role="dialog" aria-modal="true" aria-labelledby="schema-prop-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="schema-prop-title">添加属性</div>
+        <div class="modal-sub">建议先确定属性类型（对象/数据），再选择域与值域，必要时加上“必填/多值”等约束</div>
+      </div>
+      <button class="modal-close" type="button" id="schema-prop-close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-field full">
+          <div class="form-label">属性名称</div>
+          <input class="form-ctl" id="schema-prop-name" placeholder="例如：所属产线 / 投运日期" autocomplete="off">
+        </div>
+
+        <div class="form-field">
+          <div class="form-label">属性类型</div>
+          <select class="form-ctl" id="schema-prop-kind">
+            <option value="data">数据属性（DatatypeProperty）</option>
+            <option value="object">对象属性（ObjectProperty）</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <div class="form-label">域（Domain）</div>
+          <select class="form-ctl" id="schema-prop-domain"></select>
+        </div>
+
+        <div class="form-field" id="schema-prop-datatype-wrap">
+          <div class="form-label">数据类型（Range）</div>
+          <select class="form-ctl" id="schema-prop-datatype">
+            <option value="xsd:string">xsd:string</option>
+            <option value="xsd:int">xsd:int</option>
+            <option value="xsd:decimal">xsd:decimal</option>
+            <option value="xsd:boolean">xsd:boolean</option>
+            <option value="xsd:dateTime">xsd:dateTime</option>
+          </select>
+        </div>
+        <div class="form-field" id="schema-prop-range-wrap" style="display:none;">
+          <div class="form-label">值域（Range Class）</div>
+          <select class="form-ctl" id="schema-prop-range"></select>
+        </div>
+
+        <div class="form-field">
+          <div class="form-label">约束</div>
+          <div class="form-check"><input type="checkbox" class="chk" id="schema-prop-required"><span>必填</span></div>
+        </div>
+        <div class="form-field">
+          <div class="form-label">多值</div>
+          <div class="form-check"><input type="checkbox" class="chk" id="schema-prop-multi"><span>允许多个值</span></div>
+        </div>
+
+        <div class="form-field">
+          <div class="form-label">来源</div>
+          <select class="form-ctl" id="schema-prop-source">
+            <option value="manual">人工新增</option>
+            <option value="ai">AI 抽取</option>
+          </select>
+        </div>
+        <div class="form-field" id="schema-prop-confidence-wrap" style="display:none;">
+          <div class="form-label">置信度（可选）</div>
+          <input class="form-ctl" id="schema-prop-confidence" placeholder="例如：92" inputmode="numeric" autocomplete="off">
+        </div>
+      </div>
+
+      <div class="form-error" id="schema-prop-error"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" type="button" id="schema-prop-cancel">取消</button>
+      <button class="btn btn-accent" type="button" id="schema-prop-confirm">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="mapping-modal" aria-hidden="true">
+  <div class="modal-card" style="width:min(900px, 95vw); max-height:90vh; display:flex; flex-direction:column;" role="dialog" aria-modal="true" aria-labelledby="mapping-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="mapping-title">配置结构化映射</div>
+        <div class="modal-sub">将源表字段映射到目标 Schema 的属性上。拖拽连线或下拉选择进行关联。</div>
+      </div>
+      <button class="modal-close" type="button" id="mapping-close"><i data-lucide="x"></i></button>
+    </div>
+    <div class="modal-body" style="flex:1; overflow:hidden; padding:0; display:flex; flex-direction:column; background:var(--surface);">
+      <div style="padding:14px 20px; background:var(--card); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:16px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:12px; color:var(--text-500); font-weight:600;">数据源表：</span>
+          <select class="form-ctl" style="height:32px; font-size:12px; padding:0 8px;" id="mapping-source-table">
+            <option value="device_ledger">asset_mgmt.device_ledger</option>
+            <option value="production_line">mes_prod.production_line</option>
+          </select>
+        </div>
+        <i data-lucide="arrow-right" style="width:14px; height:14px; color:var(--text-400);"></i>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:12px; color:var(--text-500); font-weight:600;">目标类：</span>
+          <select class="form-ctl" style="height:32px; font-size:12px; padding:0 8px;" id="mapping-target-class">
+            <option value="设备">设备</option>
+            <option value="产线">产线</option>
+            <option value="工序">工序</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="mapping-workspace" style="flex:1; display:flex; overflow:hidden; position:relative;">
+        <div style="width:300px; background:var(--card); border-right:1px solid var(--border); display:flex; flex-direction:column;">
+          <div style="padding:12px 16px; font-size:12px; font-weight:700; color:var(--text-700); border-bottom:1px solid var(--border); background:#FAFBFD;">源字段 (Source Fields)</div>
+          <div style="flex:1; overflow-y:auto; padding:12px;" id="mapping-src-fields">
+            <div class="map-field src-field" data-field="id"><i data-lucide="key" style="color:var(--warning);"></i> <span>id</span> <span class="typ">VARCHAR</span></div>
+            <div class="map-field src-field" data-field="device_code"><i data-lucide="hash"></i> <span>device_code</span> <span class="typ">VARCHAR</span></div>
+            <div class="map-field src-field" data-field="name"><i data-lucide="type"></i> <span>name</span> <span class="typ">VARCHAR</span></div>
+            <div class="map-field src-field" data-field="status"><i data-lucide="activity"></i> <span>status</span> <span class="typ">VARCHAR</span></div>
+            <div class="map-field src-field" data-field="commission_date"><i data-lucide="calendar"></i> <span>commission_date</span> <span class="typ">DATE</span></div>
+            <div class="map-field src-field" data-field="line_id"><i data-lucide="link"></i> <span>line_id</span> <span class="typ">VARCHAR</span></div>
+            <div class="map-field src-field" data-field="manufacturer"><i data-lucide="factory"></i> <span>manufacturer</span> <span class="typ">VARCHAR</span></div>
+          </div>
+        </div>
+        
+        <div style="flex:1; position:relative; overflow:hidden;">
+          <svg id="mapping-svg" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:10;"></svg>
+          <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; opacity:0.05; pointer-events:none;">
+            <i data-lucide="git-merge" style="width:120px; height:120px;"></i>
+          </div>
+        </div>
+        
+        <div style="width:340px; background:var(--card); border-left:1px solid var(--border); display:flex; flex-direction:column;">
+          <div style="padding:12px 16px; font-size:12px; font-weight:700; color:var(--text-700); border-bottom:1px solid var(--border); background:#FAFBFD;">目标属性 (Target Properties)</div>
+          <div style="flex:1; overflow-y:auto; padding:12px;" id="mapping-tgt-props">
+            <div class="map-field tgt-field" data-prop="实例URI">
+              <div class="tgt-head"><i data-lucide="fingerprint" style="color:var(--inst-c);"></i> <span>实例 URI (必填)</span></div>
+              <div class="tgt-bind"><select class="form-ctl map-sel"><option value="">未映射...</option><option value="id">id</option><option value="device_code" selected>device_code</option><option value="name">name</option></select></div>
+            </div>
+            <div class="map-field tgt-field" data-prop="设备编号">
+              <div class="tgt-head"><span class="badge b-prop" style="padding:2px 4px;font-size:10px;">Data</span> <span>设备编号</span></div>
+              <div class="tgt-bind"><select class="form-ctl map-sel"><option value="">未映射...</option><option value="id">id</option><option value="device_code" selected>device_code</option><option value="name">name</option></select></div>
+            </div>
+            <div class="map-field tgt-field" data-prop="运行状态">
+              <div class="tgt-head"><span class="badge b-prop" style="padding:2px 4px;font-size:10px;">Data</span> <span>运行状态</span></div>
+              <div class="tgt-bind"><select class="form-ctl map-sel"><option value="">未映射...</option><option value="status" selected>status</option></select></div>
+            </div>
+            <div class="map-field tgt-field" data-prop="投运日期">
+              <div class="tgt-head"><span class="badge b-prop" style="padding:2px 4px;font-size:10px;">Data</span> <span>投运日期</span></div>
+              <div class="tgt-bind"><select class="form-ctl map-sel"><option value="">未映射...</option><option value="commission_date" selected>commission_date</option></select></div>
+            </div>
+            <div class="map-field tgt-field" data-prop="属于产线">
+              <div class="tgt-head"><span class="badge b-class" style="padding:2px 4px;font-size:10px;">Obj</span> <span>属于产线</span></div>
+              <div class="tgt-bind"><select class="form-ctl map-sel"><option value="">未映射...</option><option value="line_id" selected>line_id</option></select></div>
+            </div>
+            <div class="map-field tgt-field" data-prop="生产厂商">
+              <div class="tgt-head"><span class="badge b-class" style="padding:2px 4px;font-size:10px;">Obj</span> <span>生产厂商</span></div>
+              <div class="tgt-bind"><select class="form-ctl map-sel"><option value="">未映射...</option><option value="manufacturer" selected>manufacturer</option></select></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot" style="padding:16px 20px; border-top:1px solid var(--border); background:var(--card); justify-content:space-between;">
+      <div style="font-size:12px; color:var(--text-500); display:flex; align-items:center; gap:6px;">
+        <i data-lucide="info" style="width:14px; height:14px;"></i> 提示：可在右侧下拉框直接选择源字段，或在左侧字段处点击发起连线。
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-secondary" type="button" id="mapping-cancel">取消</button>
+        <button class="btn btn-primary" type="button" id="mapping-confirm">保存映射</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .map-field{
+    background:var(--card); border:1px solid var(--border); border-radius:8px;
+    margin-bottom:8px; font-size:12.5px; position:relative;
+    box-shadow:var(--shadow-sm); transition:border-color .15s, box-shadow .15s;
+  }
+  .map-field:hover{border-color:var(--border-strong); box-shadow:0 2px 6px rgba(15,18,35,.06);}
+  .src-field{
+    padding:10px 12px; display:flex; align-items:center; gap:8px; color:var(--text-900); font-weight:600; cursor:grab;
+  }
+  .src-field svg{width:14px; height:14px; color:var(--text-400);}
+  .src-field .typ{margin-left:auto; font-size:10px; font-family:var(--f-mono); color:var(--text-400); font-weight:500;}
+  .src-field::after{
+    content:""; position:absolute; right:-4px; top:50%; transform:translateY(-50%);
+    width:8px; height:8px; border-radius:50%; background:var(--surface); border:1.5px solid var(--border-strong);
+    z-index:2; transition:border-color .15s;
+  }
+  .src-field:hover::after{border-color:var(--accent);}
+  
+  .tgt-field{padding:10px 12px;}
+  .tgt-head{display:flex; align-items:center; gap:8px; color:var(--text-900); font-weight:600; margin-bottom:8px;}
+  .tgt-bind{position:relative;}
+  .map-sel{width:100%; height:30px; font-size:12px; padding:0 8px; border-color:var(--border-strong);}
+  .tgt-field::before{
+    content:""; position:absolute; left:-4px; top:18px;
+    width:8px; height:8px; border-radius:50%; background:var(--surface); border:1.5px solid var(--border-strong);
+    z-index:2; transition:border-color .15s;
+  }
+  .tgt-field:hover::before{border-color:var(--accent);}
+</style>
+
+<script>
+  // 初始化 Lucide 图标
+  lucide.createIcons();
+
+  // ---- 侧边栏及试图切换逻辑 ----
+  const views = document.querySelectorAll('.view');
+  const crumb = document.getElementById('crumb');
+  const titleMap = {
+    'view-home':'快速指引',
+    'view-structured':'结构化数据管理',
+    'view-unstructured':'非结构化数据管理',
+    'view-schema':'Schema 抽取与设计',
+    'view-extract':'本体抽取',
+    'view-biz-logic':'业务逻辑抽取',
+    'view-graph':'图谱探索'
+  };
+
+  function goToView(id){
+    views.forEach(v => v.classList.toggle('active', v.id === id));
+    document.querySelectorAll('[data-view]').forEach(el => {
+      if(el.classList.contains('nav-item') || el.classList.contains('pl-link') || el.tagName === 'BUTTON') {
+        if(el.classList.contains('nav-item')){
+           el.classList.toggle('active', el.dataset.view === id);
+        }
+      }
+    });
+    // 更新面包屑
+    crumb.innerHTML = 'OntoMind <i data-lucide="chevron-right" style="width:12px;height:12px;"></i> <b>' + titleMap[id] + '</b>';
+    lucide.createIcons();
+    // 视图切换后回到顶部
+    document.querySelector('.view-container').scrollTo({top:0, behavior:'instant'});
+  }
+  
+  // 绑定所有具有 data-view 属性的按钮
+  document.querySelectorAll('[data-view]').forEach(el => {
+    el.addEventListener('click', () => goToView(el.dataset.view));
+  });
+
+  // ---- 折叠菜单交互 ----
+  document.querySelectorAll('[data-toggle-group]').forEach(el => {
+    el.addEventListener('click', () => {
+      document.getElementById(el.dataset.toggleGroup).classList.toggle('collapsed');
+    });
+  });
+
+  // ---- 上传区：存储目标单选交互 ----
+  document.querySelectorAll('[data-target-opt]').forEach(el => {
+    el.addEventListener('click', () => {
+      el.parentElement.querySelectorAll('[data-target-opt]').forEach(o => o.classList.remove('active'));
+      el.classList.add('active');
+    });
+  });
+
+  function refreshModalLock(){
+    document.body.classList.toggle('modal-open', !!document.querySelector('.modal.open'));
+  }
+
+  const schemaClassList = document.getElementById('schema-class-list');
+  const schemaPropTbody = document.getElementById('schema-prop-tbody');
+  const schemaCurrentClass = document.getElementById('schema-current-class');
+  const schemaCurrentClassMeta = document.getElementById('schema-current-class-meta');
+  const schemaStatus = document.getElementById('schema-status');
+  const schemaWorkspacePanel = document.getElementById('schema-workspace-panel');
+  const schemaManagePanel = document.getElementById('schema-manage-panel');
+  const schemaSelect = document.getElementById('schema-select');
+  const schemaMgmtTbody = document.getElementById('schema-mgmt-tbody');
+  const schemaMgmtSearch = document.getElementById('schema-mgmt-search');
+  const schemaExtractBtn = document.getElementById('btn-schema-extract');
+  const schemaSaveBtn = document.getElementById('btn-save-schema');
+  const schemaExportBtn = document.getElementById('btn-export-ttl');
+  const schemaRefreshBtn = document.getElementById('btn-schema-refresh');
+  const schemaNewBtn = document.getElementById('btn-schema-new');
+
+  const schemaState = {
+    currentClass: schemaCurrentClass ? schemaCurrentClass.textContent.trim() : '',
+    counts: {},
+    propsByClass: {},
+    classMeta: {},
+    editingPropId: null
+  };
+
+  function schemaGetClasses(){
+    if(!schemaClassList) return [];
+    return Array.from(schemaClassList.querySelectorAll('.class-chip')).map(el => el.dataset.class).filter(Boolean);
+  }
+
+  function schemaSetMeta(label){
+    if(!schemaCurrentClassMeta) return;
+    if(label === '设备'){
+      schemaCurrentClassMeta.textContent = 'rdfs:label = "' + label + '" · 来自 2 个数据源';
+      return;
+    }
+    schemaCurrentClassMeta.textContent = 'rdfs:label = "' + label + '" · 人工新增';
+  }
+
+  function schemaUpdateCount(label, delta){
+    const n = Number(schemaState.counts[label] || 0) + delta;
+    schemaState.counts[label] = Math.max(0, n);
+    if(!schemaClassList) return;
+    const chip = schemaClassList.querySelector('.class-chip[data-class="' + label + '"]');
+    if(!chip) return;
+    const cnt = chip.querySelector('.cnt');
+    if(cnt) cnt.textContent = String(schemaState.counts[label]);
+  }
+
+  function schemaBuildPropRow(prop){
+    const typeBadge = prop.kind === 'data'
+      ? '<span class="badge b-prop">数据属性</span>'
+      : '<span class="badge b-class">对象属性</span>';
+    const rangeCell = prop.kind === 'data'
+      ? '<span style="font-family:var(--f-mono);font-size:12px;">' + prop.datatype + '</span>'
+      : '<span style="font-family:var(--f-mono);font-size:12px;">range: ' + prop.range + '</span>';
+    const requiredCell = prop.required
+      ? '<i data-lucide="check" style="width:14px;height:14px;color:var(--success);"></i>'
+      : '';
+    const sourceCell = prop.source === 'ai'
+      ? '<span class="badge b-accent"><i data-lucide="sparkles"></i>AI · ' + (prop.confidence || 90) + '%</span>'
+      : '<span class="badge b-neutral"><i data-lucide="user"></i>人工新增</span>';
+    return '<tr data-prop-id="' + prop.id + '">'
+      + '<td class="cell-title">' + prop.name + '</td>'
+      + '<td>' + typeBadge + '</td>'
+      + '<td>' + rangeCell + '</td>'
+      + '<td>' + requiredCell + '</td>'
+      + '<td>' + sourceCell + '</td>'
+      + '<td><div class="row-actions">'
+      + '<button class="icon-btn" data-prop-action="edit"><i data-lucide="pencil"></i></button>'
+      + '<button class="icon-btn" data-prop-action="delete"><i data-lucide="trash-2"></i></button>'
+      + '</div></td>'
+      + '</tr>';
+  }
+
+  function schemaRenderProps(){
+    if(!schemaPropTbody) return;
+    const cls = schemaState.currentClass;
+    const props = schemaState.propsByClass[cls] || [];
+    schemaPropTbody.innerHTML = props.map(schemaBuildPropRow).join('');
+    lucide.createIcons();
+  }
+
+  function schemaSetActiveClass(label){
+    schemaState.currentClass = label;
+    if(schemaCurrentClass) schemaCurrentClass.textContent = label;
+    schemaSetMeta(label);
+    if(schemaClassList){
+      schemaClassList.querySelectorAll('.class-chip').forEach(chip => {
+        chip.classList.toggle('active', chip.dataset.class === label);
+      });
+    }
+    schemaRenderProps();
+    schemaSyncPropSelects();
+  }
+
+  function schemaParseInitial(){
+    if(schemaClassList){
+      schemaClassList.querySelectorAll('.class-chip').forEach(chip => {
+        const label = chip.dataset.class;
+        const cnt = chip.querySelector('.cnt');
+        schemaState.counts[label] = Number(cnt ? cnt.textContent : 0) || 0;
+        if(!schemaState.propsByClass[label]) schemaState.propsByClass[label] = [];
+        if(!schemaState.classMeta[label]) schemaState.classMeta[label] = { parent: 'owl:Thing', local: '', desc: '' };
+      });
+    }
+    if(schemaPropTbody && schemaState.currentClass){
+      let idx = 0;
+      const props = [];
+      Array.from(schemaPropTbody.querySelectorAll('tr')).forEach(tr => {
+        const name = tr.querySelector('.cell-title') ? tr.querySelector('.cell-title').textContent.trim() : '';
+        if(!name) return;
+        const badge = tr.querySelector('td:nth-child(2) .badge');
+        const kind = badge && badge.classList.contains('b-class') ? 'object' : 'data';
+        const rawRange = tr.querySelector('td:nth-child(3)') ? tr.querySelector('td:nth-child(3)').textContent.trim() : '';
+        const required = !!(tr.querySelector('td:nth-child(4) svg'));
+        const srcTxt = tr.querySelector('td:nth-child(5)') ? tr.querySelector('td:nth-child(5)').textContent : '';
+        const source = srcTxt.includes('AI') ? 'ai' : 'manual';
+        const m = srcTxt.match(/(\d+)%/);
+        const confidence = m ? Number(m[1]) : null;
+        const id = 'p_' + Date.now() + '_' + (idx++);
+        if(kind === 'object'){
+          const range = rawRange.replace(/^range:\s*/,'').trim();
+          props.push({id, name, kind, domain: schemaState.currentClass, range, required, multi:false, source, confidence});
+        }else{
+          props.push({id, name, kind, domain: schemaState.currentClass, datatype: rawRange, required, multi:false, source, confidence});
+        }
+      });
+      schemaState.propsByClass[schemaState.currentClass] = props;
+      schemaRenderProps();
+    }
+  }
+
+  function schemaSyncPropSelects(){
+    const domainSel = document.getElementById('schema-prop-domain');
+    const rangeSel = document.getElementById('schema-prop-range');
+    if(domainSel){
+      const cls = schemaGetClasses();
+      domainSel.innerHTML = cls.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+      domainSel.value = schemaState.currentClass || (cls[0] || '');
+    }
+    if(rangeSel){
+      const cls = schemaGetClasses();
+      rangeSel.innerHTML = cls.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+      if(schemaState.currentClass) rangeSel.value = schemaState.currentClass;
+    }
+  }
+
+  const schemaLibrary = [];
+  let currentSchemaId = null;
+
+  function schemaDeepClone(obj){
+    return JSON.parse(JSON.stringify(obj));
+  }
+
+  function schemaFormatTime(ts){
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2,'0');
+    return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function schemaComputeStats(snapshot){
+    const cls = Object.keys(snapshot.counts || {});
+    let propCount = 0;
+    cls.forEach(c => { propCount += (snapshot.propsByClass && snapshot.propsByClass[c] ? snapshot.propsByClass[c].length : 0); });
+    return { classCount: cls.length, propCount };
+  }
+
+  function schemaGetSnapshot(){
+    return schemaDeepClone({
+      currentClass: schemaState.currentClass,
+      counts: schemaState.counts,
+      propsByClass: schemaState.propsByClass,
+      classMeta: schemaState.classMeta
+    });
+  }
+
+  function schemaRenderClassList(activeClass){
+    if(!schemaClassList) return;
+    const classes = Object.keys(schemaState.counts || {});
+    schemaClassList.innerHTML = classes.map(c => {
+      const isActive = c === activeClass;
+      const cnt = Number(schemaState.counts[c] || 0);
+      return '<div class="class-chip' + (isActive ? ' active' : '') + '" data-class="' + c + '"><span class="class-dot"></span>' + c + '<span class="cnt">' + cnt + '</span></div>';
+    }).join('');
+    lucide.createIcons();
+  }
+
+  function schemaLoadSnapshot(snapshot){
+    schemaState.counts = schemaDeepClone(snapshot.counts || {});
+    schemaState.propsByClass = schemaDeepClone(snapshot.propsByClass || {});
+    schemaState.classMeta = schemaDeepClone(snapshot.classMeta || {});
+    const classes = Object.keys(schemaState.counts || {});
+    classes.forEach(c => {
+      if(!schemaState.propsByClass[c]) schemaState.propsByClass[c] = [];
+      if(!schemaState.classMeta[c]) schemaState.classMeta[c] = { parent: 'owl:Thing', local: '', desc: '' };
+    });
+    const active = (snapshot.currentClass && classes.includes(snapshot.currentClass)) ? snapshot.currentClass : (classes[0] || '');
+    schemaRenderClassList(active);
+    if(active) schemaSetActiveClass(active);
+    schemaSyncPropSelects();
+  }
+
+  function schemaRenderSchemaSelect(){
+    if(!schemaSelect) return;
+    schemaSelect.innerHTML = schemaLibrary.map(s => '<option value="' + s.id + '">' + s.name + '</option>').join('');
+    if(currentSchemaId) schemaSelect.value = currentSchemaId;
+  }
+
+  function schemaRenderMgmt(){
+    if(!schemaMgmtTbody) return;
+    const q = String(schemaMgmtSearch ? schemaMgmtSearch.value : '').trim().toLowerCase();
+    const rows = schemaLibrary
+      .filter(s => !q || s.name.toLowerCase().includes(q))
+      .sort((a,b) => b.updatedAt - a.updatedAt)
+      .map(s => {
+        const st = schemaComputeStats(s.snapshot);
+        return '<tr data-schema-id="' + s.id + '">'
+          + '<td class="cell-title">' + s.name + '</td>'
+          + '<td>' + st.classCount + '</td>'
+          + '<td>' + st.propCount + '</td>'
+          + '<td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">' + schemaFormatTime(s.updatedAt) + '</td>'
+          + '<td><div class="row-actions">'
+          + '<button class="icon-btn" data-schema-action="edit" title="编辑"><i data-lucide="pencil"></i></button>'
+          + '<button class="icon-btn" data-schema-action="export" title="导出 TTL"><i data-lucide="download"></i></button>'
+          + '</div></td>'
+          + '</tr>';
+      }).join('');
+    schemaMgmtTbody.innerHTML = rows || '<tr><td colspan="5" style="padding:16px;color:var(--text-400);">暂无 Schema 记录</td></tr>';
+    lucide.createIcons();
+  }
+
+  function schemaSetStatus(text){
+    if(schemaStatus) schemaStatus.textContent = text;
+  }
+
+  function schemaSetTab(tab){
+    document.querySelectorAll('[data-schema-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.schemaTab === tab);
+    });
+    if(schemaWorkspacePanel) schemaWorkspacePanel.style.display = (tab === 'workspace') ? '' : 'none';
+    if(schemaManagePanel) schemaManagePanel.style.display = (tab === 'manage') ? '' : 'none';
+    lucide.createIcons();
+  }
+
+  function schemaInitLibrary(){
+    const id = 's_' + Date.now();
+    currentSchemaId = id;
+    schemaLibrary.push({
+      id,
+      name: '输变电设备本体 v3',
+      updatedAt: Date.now(),
+      snapshot: schemaGetSnapshot()
+    });
+    schemaRenderSchemaSelect();
+    schemaRenderMgmt();
+    schemaSetStatus('状态：可编辑');
+  }
+
+  function schemaSaveCurrent(){
+    const snap = schemaGetSnapshot();
+    if(!currentSchemaId){
+      currentSchemaId = 's_' + Date.now();
+      schemaLibrary.push({ id: currentSchemaId, name: '未命名 Schema', updatedAt: Date.now(), snapshot: snap });
+    }else{
+      const hit = schemaLibrary.find(s => s.id === currentSchemaId);
+      if(hit){
+        hit.snapshot = snap;
+        hit.updatedAt = Date.now();
+      }else{
+        schemaLibrary.push({ id: currentSchemaId, name: '未命名 Schema', updatedAt: Date.now(), snapshot: snap });
+      }
+    }
+    schemaRenderSchemaSelect();
+    schemaRenderMgmt();
+    schemaSetStatus('状态：已保存 · ' + schemaFormatTime(Date.now()));
+  }
+
+  function schemaLoadById(id){
+    const hit = schemaLibrary.find(s => s.id === id);
+    if(!hit) return;
+    currentSchemaId = id;
+    schemaLoadSnapshot(hit.snapshot);
+    schemaRenderSchemaSelect();
+    schemaSetStatus('状态：编辑中 · ' + hit.name);
+  }
+
+  function schemaEscapeLiteral(s){
+    return String(s || '').replace(/\\/g,'\\\\').replace(/\"/g,'\\"');
+  }
+
+  function schemaMakeSafeLocal(raw, fallbackPrefix){
+    const s = String(raw || '').trim();
+    if(!s) return fallbackPrefix + '_' + Date.now();
+    const ascii = s.replace(/[^\w]/g,'_');
+    if(/^[A-Za-z_][\w]*$/.test(ascii) && ascii.replace(/_/g,'').length > 0) return ascii;
+    const hex = Array.from(s).map(ch => ch.codePointAt(0).toString(16)).join('');
+    return fallbackPrefix + '_' + hex;
+  }
+
+  function schemaBuildTtl(snapshot){
+    const base = 'http://example.com/ontomind/schema#';
+    const classes = Object.keys(snapshot.counts || {});
+    const classIri = {};
+    classes.forEach(c => {
+      const meta = snapshot.classMeta && snapshot.classMeta[c] ? snapshot.classMeta[c] : null;
+      const local = meta && meta.local ? schemaMakeSafeLocal(meta.local,'C') : schemaMakeSafeLocal(c,'C');
+      classIri[c] = 'om:' + local;
+    });
+
+    const lines = [];
+    lines.push('@prefix om: <' + base + '> .');
+    lines.push('@prefix owl: <http://www.w3.org/2002/07/owl#> .');
+    lines.push('@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .');
+    lines.push('@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .');
+    lines.push('');
+    lines.push('om: a owl:Ontology .');
+    lines.push('');
+
+    classes.forEach(c => {
+      const meta = snapshot.classMeta && snapshot.classMeta[c] ? snapshot.classMeta[c] : {};
+      const parent = meta.parent && meta.parent !== 'owl:Thing'
+        ? (classIri[meta.parent] || meta.parent)
+        : null;
+      const parts = [];
+      parts.push(classIri[c] + ' a owl:Class');
+      parts.push('rdfs:label "' + schemaEscapeLiteral(c) + '"@zh');
+      if(parent) parts.push('rdfs:subClassOf ' + parent);
+      if(meta.desc) parts.push('rdfs:comment "' + schemaEscapeLiteral(meta.desc) + '"@zh');
+      lines.push(parts.join(' ;\n  ') + ' .');
+      lines.push('');
+    });
+
+    const usedPropLocal = new Set();
+    const propsByClass = snapshot.propsByClass || {};
+    Object.keys(propsByClass).forEach(domain => {
+      (propsByClass[domain] || []).forEach(p => {
+        let local = schemaMakeSafeLocal(p.name,'P');
+        while(usedPropLocal.has(local)) local = local + '_x';
+        usedPropLocal.add(local);
+        const iri = 'om:' + local;
+        const isObj = p.kind === 'object';
+        const propType = isObj ? 'owl:ObjectProperty' : 'owl:DatatypeProperty';
+        const range = isObj
+          ? (classIri[p.range] || 'owl:Thing')
+          : (p.datatype || 'xsd:string');
+        const parts = [];
+        parts.push(iri + ' a ' + propType);
+        parts.push('rdfs:label "' + schemaEscapeLiteral(p.name) + '"@zh');
+        parts.push('rdfs:domain ' + (classIri[domain] || classIri[snapshot.currentClass] || 'owl:Thing'));
+        parts.push('rdfs:range ' + range);
+        if(p.required) parts.push('rdfs:comment "required"');
+        if(p.multi) parts.push('rdfs:comment "multi"');
+        lines.push(parts.join(' ;\n  ') + ' .');
+        lines.push('');
+      });
+    });
+
+    return lines.join('\n');
+  }
+
+  function schemaDownloadTtl(name, snapshot){
+    const ttl = schemaBuildTtl(snapshot);
+    const blob = new Blob([ttl], {type:'text/turtle;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (name || 'schema') + '.ttl';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 800);
+  }
+
+  if(schemaSelect){
+    schemaSelect.addEventListener('change', () => {
+      schemaLoadById(schemaSelect.value);
+    });
+  }
+  if(schemaSaveBtn) schemaSaveBtn.addEventListener('click', schemaSaveCurrent);
+  if(schemaExportBtn){
+    schemaExportBtn.addEventListener('click', () => {
+      const hit = schemaLibrary.find(s => s.id === currentSchemaId);
+      const snap = hit ? hit.snapshot : schemaGetSnapshot();
+      const name = hit ? hit.name : 'schema';
+      schemaDownloadTtl(name, snap);
+    });
+  }
+  if(schemaMgmtSearch) schemaMgmtSearch.addEventListener('input', schemaRenderMgmt);
+  if(schemaRefreshBtn) schemaRefreshBtn.addEventListener('click', schemaRenderMgmt);
+  if(schemaNewBtn){
+    schemaNewBtn.addEventListener('click', () => {
+      currentSchemaId = 's_' + Date.now();
+      schemaLibrary.push({ id: currentSchemaId, name: '新 Schema · ' + schemaFormatTime(Date.now()), updatedAt: Date.now(), snapshot: schemaGetSnapshot() });
+      schemaRenderSchemaSelect();
+      schemaRenderMgmt();
+      if(schemaSelect) schemaSelect.value = currentSchemaId;
+      schemaSetStatus('状态：新建 Schema');
+      schemaSetTab('workspace');
+    });
+  }
+  if(schemaMgmtTbody){
+    schemaMgmtTbody.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if(!btn) return;
+      const act = btn.dataset.schemaAction;
+      if(!act) return;
+      const tr = btn.closest('tr');
+      if(!tr) return;
+      const id = tr.dataset.schemaId;
+      const hit = schemaLibrary.find(s => s.id === id);
+      if(!hit) return;
+      if(act === 'edit'){
+        schemaLoadById(id);
+        schemaSetTab('workspace');
+      }
+      if(act === 'export'){
+        schemaDownloadTtl(hit.name, hit.snapshot);
+      }
+    });
+  }
+  document.querySelectorAll('[data-schema-tab]').forEach(btn => {
+    btn.addEventListener('click', () => schemaSetTab(btn.dataset.schemaTab));
+  });
+  if(schemaExtractBtn){
+    schemaExtractBtn.addEventListener('click', () => {
+      schemaExtractBtn.setAttribute('disabled','true');
+      schemaSetStatus('状态：抽取中…');
+      schemaExtractBtn.innerHTML = '<i data-lucide="loader"></i>抽取中…';
+      lucide.createIcons();
+      setTimeout(() => {
+        currentSchemaId = 's_' + Date.now();
+        schemaLibrary.push({ id: currentSchemaId, name: '抽取结果 · ' + schemaFormatTime(Date.now()), updatedAt: Date.now(), snapshot: schemaGetSnapshot() });
+        schemaRenderSchemaSelect();
+        schemaRenderMgmt();
+        if(schemaSelect) schemaSelect.value = currentSchemaId;
+        schemaSetStatus('状态：抽取完成');
+        schemaSetTab('manage');
+        schemaExtractBtn.removeAttribute('disabled');
+        schemaExtractBtn.innerHTML = '<i data-lucide="sparkles"></i>重新抽取';
+        lucide.createIcons();
+      }, 1400);
+    });
+  }
+
+  const schemaClassModal = document.getElementById('schema-class-modal');
+  const schemaClassOpenBtn = document.getElementById('btn-add-class');
+  const schemaClassCloseBtn = document.getElementById('schema-class-close');
+  const schemaClassCancelBtn = document.getElementById('schema-class-cancel');
+  const schemaClassConfirmBtn = document.getElementById('schema-class-confirm');
+  const schemaClassLabel = document.getElementById('schema-class-label');
+  const schemaClassLocal = document.getElementById('schema-class-local');
+  const schemaClassParent = document.getElementById('schema-class-parent');
+  const schemaClassDesc = document.getElementById('schema-class-desc');
+  const schemaClassErr = document.getElementById('schema-class-error');
+
+  function schemaResetClassForm(){
+    if(schemaClassLabel) schemaClassLabel.value = '';
+    if(schemaClassLocal) schemaClassLocal.value = '';
+    if(schemaClassDesc) schemaClassDesc.value = '';
+    if(schemaClassErr) schemaClassErr.textContent = '';
+    if(schemaClassLabel) schemaClassLabel.setAttribute('data-invalid','false');
+  }
+
+  function schemaFillParentOptions(selected){
+    if(!schemaClassParent) return;
+    const opts = ['owl:Thing'].concat(schemaGetClasses());
+    schemaClassParent.innerHTML = opts.map(v => '<option value="' + v + '">' + v + '</option>').join('');
+    schemaClassParent.value = selected || 'owl:Thing';
+  }
+
+  function openSchemaClassModal(){
+    schemaResetClassForm();
+    schemaFillParentOptions('owl:Thing');
+    if(schemaClassModal){
+      schemaClassModal.classList.add('open');
+      schemaClassModal.setAttribute('aria-hidden','false');
+      refreshModalLock();
+      if(schemaClassLabel) schemaClassLabel.focus();
+      lucide.createIcons();
+    }
+  }
+
+  function closeSchemaClassModal(){
+    if(!schemaClassModal) return;
+    schemaClassModal.classList.remove('open');
+    schemaClassModal.setAttribute('aria-hidden','true');
+    refreshModalLock();
+    if(schemaClassOpenBtn) schemaClassOpenBtn.focus();
+  }
+
+  function schemaValidateClass(){
+    if(schemaClassErr) schemaClassErr.textContent = '';
+    if(!schemaClassLabel) return false;
+    schemaClassLabel.setAttribute('data-invalid','false');
+    const label = String(schemaClassLabel.value || '').trim();
+    if(!label){
+      schemaClassLabel.setAttribute('data-invalid','true');
+      if(schemaClassErr) schemaClassErr.textContent = '请填写类名称。';
+      return false;
+    }
+    const exists = schemaGetClasses().includes(label);
+    if(exists){
+      schemaClassLabel.setAttribute('data-invalid','true');
+      if(schemaClassErr) schemaClassErr.textContent = '该类已存在，请更换名称。';
+      return false;
+    }
+    return true;
+  }
+
+  function schemaAddClass(){
+    if(!schemaValidateClass()) return;
+    const label = String(schemaClassLabel.value || '').trim();
+    const parent = schemaClassParent ? schemaClassParent.value : 'owl:Thing';
+    const local = String(schemaClassLocal ? schemaClassLocal.value : '').trim();
+    const desc = String(schemaClassDesc ? schemaClassDesc.value : '').trim();
+    const chip = document.createElement('div');
+    chip.className = 'class-chip';
+    chip.dataset.class = label;
+    chip.innerHTML = '<span class="class-dot"></span>' + label + '<span class="cnt">0</span>';
+    if(schemaClassList) schemaClassList.appendChild(chip);
+    schemaState.counts[label] = 0;
+    schemaState.propsByClass[label] = [];
+    schemaState.classMeta[label] = { parent, local, desc };
+    schemaSyncPropSelects();
+    schemaSetActiveClass(label);
+    closeSchemaClassModal();
+  }
+
+  if(schemaClassOpenBtn) schemaClassOpenBtn.addEventListener('click', openSchemaClassModal);
+  if(schemaClassCloseBtn) schemaClassCloseBtn.addEventListener('click', closeSchemaClassModal);
+  if(schemaClassCancelBtn) schemaClassCancelBtn.addEventListener('click', closeSchemaClassModal);
+  if(schemaClassConfirmBtn) schemaClassConfirmBtn.addEventListener('click', schemaAddClass);
+  if(schemaClassModal){
+    schemaClassModal.addEventListener('click', (e) => { if(e.target === schemaClassModal) closeSchemaClassModal(); });
+  }
+  if(schemaClassLabel){
+    schemaClassLabel.addEventListener('input', () => { schemaClassLabel.setAttribute('data-invalid','false'); if(schemaClassErr) schemaClassErr.textContent = ''; });
+  }
+
+  const schemaPropModal = document.getElementById('schema-prop-modal');
+  const schemaPropOpenBtn = document.getElementById('btn-add-prop');
+  const schemaPropCloseBtn = document.getElementById('schema-prop-close');
+  const schemaPropCancelBtn = document.getElementById('schema-prop-cancel');
+  const schemaPropConfirmBtn = document.getElementById('schema-prop-confirm');
+  const schemaPropName = document.getElementById('schema-prop-name');
+  const schemaPropKind = document.getElementById('schema-prop-kind');
+  const schemaPropDomain = document.getElementById('schema-prop-domain');
+  const schemaPropDatatypeWrap = document.getElementById('schema-prop-datatype-wrap');
+  const schemaPropRangeWrap = document.getElementById('schema-prop-range-wrap');
+  const schemaPropDatatype = document.getElementById('schema-prop-datatype');
+  const schemaPropRange = document.getElementById('schema-prop-range');
+  const schemaPropRequired = document.getElementById('schema-prop-required');
+  const schemaPropMulti = document.getElementById('schema-prop-multi');
+  const schemaPropSource = document.getElementById('schema-prop-source');
+  const schemaPropConfidenceWrap = document.getElementById('schema-prop-confidence-wrap');
+  const schemaPropConfidence = document.getElementById('schema-prop-confidence');
+  const schemaPropErr = document.getElementById('schema-prop-error');
+
+  function schemaResetPropForm(){
+    schemaState.editingPropId = null;
+    if(schemaPropName) schemaPropName.value = '';
+    if(schemaPropKind) schemaPropKind.value = 'data';
+    if(schemaPropRequired) schemaPropRequired.checked = false;
+    if(schemaPropMulti) schemaPropMulti.checked = false;
+    if(schemaPropSource) schemaPropSource.value = 'manual';
+    if(schemaPropConfidence) schemaPropConfidence.value = '';
+    if(schemaPropErr) schemaPropErr.textContent = '';
+    if(schemaPropName) schemaPropName.setAttribute('data-invalid','false');
+    if(schemaPropConfidence) schemaPropConfidence.setAttribute('data-invalid','false');
+  }
+
+  function schemaApplyPropKind(){
+    if(!schemaPropKind) return;
+    const k = schemaPropKind.value;
+    if(schemaPropDatatypeWrap) schemaPropDatatypeWrap.style.display = (k === 'data') ? '' : 'none';
+    if(schemaPropRangeWrap) schemaPropRangeWrap.style.display = (k === 'object') ? '' : 'none';
+  }
+
+  function schemaApplyPropSource(){
+    if(!schemaPropSource) return;
+    const s = schemaPropSource.value;
+    if(schemaPropConfidenceWrap) schemaPropConfidenceWrap.style.display = (s === 'ai') ? '' : 'none';
+  }
+
+  function openSchemaPropModal(prop){
+    schemaResetPropForm();
+    schemaSyncPropSelects();
+    if(schemaPropDomain) schemaPropDomain.value = schemaState.currentClass || (schemaGetClasses()[0] || '');
+    if(prop){
+      schemaState.editingPropId = prop.id;
+      if(schemaPropName) schemaPropName.value = prop.name || '';
+      if(schemaPropKind) schemaPropKind.value = prop.kind || 'data';
+      if(schemaPropDomain) schemaPropDomain.value = prop.domain || schemaState.currentClass;
+      if(schemaPropRequired) schemaPropRequired.checked = !!prop.required;
+      if(schemaPropMulti) schemaPropMulti.checked = !!prop.multi;
+      if(schemaPropSource) schemaPropSource.value = prop.source || 'manual';
+      if(schemaPropKind && schemaPropKind.value === 'data' && schemaPropDatatype) schemaPropDatatype.value = prop.datatype || 'xsd:string';
+      if(schemaPropKind && schemaPropKind.value === 'object' && schemaPropRange) schemaPropRange.value = prop.range || (schemaGetClasses()[0] || '');
+      if(schemaPropConfidence) schemaPropConfidence.value = (prop.confidence != null) ? String(prop.confidence) : '';
+    }
+    schemaApplyPropKind();
+    schemaApplyPropSource();
+    if(schemaPropModal){
+      schemaPropModal.classList.add('open');
+      schemaPropModal.setAttribute('aria-hidden','false');
+      refreshModalLock();
+      if(schemaPropName) schemaPropName.focus();
+      lucide.createIcons();
+    }
+  }
+
+  function closeSchemaPropModal(){
+    if(!schemaPropModal) return;
+    schemaPropModal.classList.remove('open');
+    schemaPropModal.setAttribute('aria-hidden','true');
+    refreshModalLock();
+    if(schemaPropOpenBtn) schemaPropOpenBtn.focus();
+  }
+
+  function schemaValidateProp(){
+    if(schemaPropErr) schemaPropErr.textContent = '';
+    if(schemaPropName) schemaPropName.setAttribute('data-invalid','false');
+    if(schemaPropConfidence) schemaPropConfidence.setAttribute('data-invalid','false');
+    const name = String(schemaPropName ? schemaPropName.value : '').trim();
+    if(!name){
+      if(schemaPropName) schemaPropName.setAttribute('data-invalid','true');
+      if(schemaPropErr) schemaPropErr.textContent = '请填写属性名称。';
+      return null;
+    }
+    const domain = schemaPropDomain ? schemaPropDomain.value : schemaState.currentClass;
+    if(!domain){
+      if(schemaPropErr) schemaPropErr.textContent = '请先选择域（Domain）。';
+      return null;
+    }
+    const kind = schemaPropKind ? schemaPropKind.value : 'data';
+    let datatype = null;
+    let range = null;
+    if(kind === 'data'){
+      datatype = schemaPropDatatype ? schemaPropDatatype.value : 'xsd:string';
+    }else{
+      range = schemaPropRange ? schemaPropRange.value : '';
+      if(!String(range || '').trim()){
+        if(schemaPropErr) schemaPropErr.textContent = '对象属性需要选择值域（Range Class）。';
+        return null;
+      }
+    }
+    const required = !!(schemaPropRequired && schemaPropRequired.checked);
+    const multi = !!(schemaPropMulti && schemaPropMulti.checked);
+    const source = schemaPropSource ? schemaPropSource.value : 'manual';
+    let confidence = null;
+    if(source === 'ai'){
+      const raw = String(schemaPropConfidence ? schemaPropConfidence.value : '').trim();
+      if(raw){
+        if(!/^\d{1,3}$/.test(raw) || Number(raw) > 100){
+          if(schemaPropConfidence) schemaPropConfidence.setAttribute('data-invalid','true');
+          if(schemaPropErr) schemaPropErr.textContent = '置信度请填写 0–100 的数字。';
+          return null;
+        }
+        confidence = Number(raw);
+      }
+    }
+    const list = schemaState.propsByClass[domain] || [];
+    const dup = list.find(p => p.name === name && p.id !== schemaState.editingPropId);
+    if(dup){
+      if(schemaPropName) schemaPropName.setAttribute('data-invalid','true');
+      if(schemaPropErr) schemaPropErr.textContent = '该域下已存在同名属性，请更换名称。';
+      return null;
+    }
+    return {name, domain, kind, datatype, range, required, multi, source, confidence};
+  }
+
+  function schemaUpsertProp(){
+    const v = schemaValidateProp();
+    if(!v) return;
+    const oldCls = schemaState.currentClass;
+    const editingId = schemaState.editingPropId;
+    let oldDomain = null;
+    if(editingId){
+      Object.keys(schemaState.propsByClass).forEach(cls => {
+        const hit = (schemaState.propsByClass[cls] || []).find(p => p.id === editingId);
+        if(hit) oldDomain = cls;
+      });
+    }
+    const domain = v.domain;
+    if(!schemaState.propsByClass[domain]) schemaState.propsByClass[domain] = [];
+    if(!schemaState.counts.hasOwnProperty(domain)) schemaState.counts[domain] = 0;
+
+    if(editingId){
+      if(oldDomain && oldDomain !== domain){
+        const moving = (schemaState.propsByClass[oldDomain] || []).find(p => p.id === editingId);
+        schemaState.propsByClass[oldDomain] = (schemaState.propsByClass[oldDomain] || []).filter(p => p.id !== editingId);
+        schemaUpdateCount(oldDomain, -1);
+        if(moving){
+          moving.name = v.name;
+          moving.kind = v.kind;
+          moving.domain = domain;
+          moving.datatype = v.kind === 'data' ? v.datatype : undefined;
+          moving.range = v.kind === 'object' ? v.range : undefined;
+          moving.required = v.required;
+          moving.multi = v.multi;
+          moving.source = v.source;
+          moving.confidence = v.confidence;
+          schemaState.propsByClass[domain].push(moving);
+          schemaUpdateCount(domain, 1);
+        }
+      }else{
+        const list = schemaState.propsByClass[domain] || [];
+        const idx = list.findIndex(p => p.id === editingId);
+        if(idx >= 0){
+          list[idx] = {
+            ...list[idx],
+            name: v.name,
+            kind: v.kind,
+            domain,
+            datatype: v.kind === 'data' ? v.datatype : undefined,
+            range: v.kind === 'object' ? v.range : undefined,
+            required: v.required,
+            multi: v.multi,
+            source: v.source,
+            confidence: v.confidence
+          };
+        }
+      }
+    }else{
+      const id = 'p_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+      schemaState.propsByClass[domain].push({
+        id,
+        name: v.name,
+        kind: v.kind,
+        domain,
+        datatype: v.kind === 'data' ? v.datatype : undefined,
+        range: v.kind === 'object' ? v.range : undefined,
+        required: v.required,
+        multi: v.multi,
+        source: v.source,
+        confidence: v.confidence
+      });
+      schemaUpdateCount(domain, 1);
+    }
+
+    if(schemaState.currentClass === domain || schemaState.currentClass === oldDomain){
+      schemaRenderProps();
+    }
+    closeSchemaPropModal();
+  }
+
+  if(schemaPropOpenBtn) schemaPropOpenBtn.addEventListener('click', () => openSchemaPropModal());
+  if(schemaPropCloseBtn) schemaPropCloseBtn.addEventListener('click', closeSchemaPropModal);
+  if(schemaPropCancelBtn) schemaPropCancelBtn.addEventListener('click', closeSchemaPropModal);
+  if(schemaPropConfirmBtn) schemaPropConfirmBtn.addEventListener('click', schemaUpsertProp);
+  if(schemaPropKind) schemaPropKind.addEventListener('change', () => { schemaApplyPropKind(); if(schemaPropErr) schemaPropErr.textContent = ''; });
+  if(schemaPropSource) schemaPropSource.addEventListener('change', () => { schemaApplyPropSource(); if(schemaPropErr) schemaPropErr.textContent = ''; });
+  if(schemaPropName){
+    schemaPropName.addEventListener('input', () => { schemaPropName.setAttribute('data-invalid','false'); if(schemaPropErr) schemaPropErr.textContent = ''; });
+  }
+  if(schemaPropConfidence){
+    schemaPropConfidence.addEventListener('input', () => { schemaPropConfidence.setAttribute('data-invalid','false'); if(schemaPropErr) schemaPropErr.textContent = ''; });
+  }
+  if(schemaPropModal){
+    schemaPropModal.addEventListener('click', (e) => { if(e.target === schemaPropModal) closeSchemaPropModal(); });
+  }
+
+  if(schemaClassList){
+    schemaClassList.addEventListener('click', (e) => {
+      const chip = e.target.closest('.class-chip');
+      if(!chip) return;
+      if(chip.dataset.class) schemaSetActiveClass(chip.dataset.class);
+    });
+  }
+
+  if(schemaPropTbody){
+    schemaPropTbody.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if(!btn) return;
+      const action = btn.dataset.propAction;
+      if(!action) return;
+      const row = btn.closest('tr');
+      if(!row) return;
+      const id = row.dataset.propId;
+      const cls = schemaState.currentClass;
+      const props = schemaState.propsByClass[cls] || [];
+      const prop = props.find(p => p.id === id);
+      if(!prop) return;
+      if(action === 'delete'){
+        schemaState.propsByClass[cls] = props.filter(p => p.id !== id);
+        schemaUpdateCount(cls, -1);
+        schemaRenderProps();
+      }
+      if(action === 'edit'){
+        openSchemaPropModal(prop);
+      }
+    });
+  }
+
+  const schemaImportFile = document.getElementById('schema-import-file');
+  if(schemaImportFile){
+    schemaImportFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if(!file) return;
+      const id = 'sch_' + Date.now();
+      const name = file.name.replace(/\.ttl$/i, '');
+      const newSchema = {
+        id,
+        name: name,
+        ts: Date.now(),
+        snapshot: {
+          currentClass: '导入类',
+          counts: {'导入类': 1},
+          propsByClass: {'导入类': [
+             {id: 'p_' + Date.now(), name: '示例属性', kind: 'data', datatype: 'xsd:string', required: false, source: 'manual'}
+          ]},
+          classMeta: {'导入类': {parent: 'owl:Thing', local: '', desc: ''}}
+        }
+      };
+      schemaLibrary.unshift(newSchema);
+      schemaRenderMgmt();
+      schemaRenderSchemaSelect();
+      schemaImportFile.value = '';
+      alert('TTL 文件「' + file.name + '」已导入成功。');
+    });
+  }
+
+  const btnConfigMapping = document.getElementById('btn-config-mapping');
+  const mappingModal = document.getElementById('mapping-modal');
+  const mappingClose = document.getElementById('mapping-close');
+  const mappingCancel = document.getElementById('mapping-cancel');
+  const mappingConfirm = document.getElementById('mapping-confirm');
+
+  function closeMappingModal() {
+    if(!mappingModal) return;
+    mappingModal.classList.remove('open');
+    mappingModal.setAttribute('aria-hidden','true');
+    refreshModalLock();
+  }
+
+  if(btnConfigMapping){
+    btnConfigMapping.addEventListener('click', () => {
+      mappingModal.classList.add('open');
+      mappingModal.setAttribute('aria-hidden','false');
+      refreshModalLock();
+      lucide.createIcons();
+    });
+  }
+  
+  if(mappingClose) mappingClose.addEventListener('click', closeMappingModal);
+  if(mappingCancel) mappingCancel.addEventListener('click', closeMappingModal);
+  if(mappingConfirm) mappingConfirm.addEventListener('click', () => {
+    closeMappingModal();
+    alert('映射已保存。');
+  });
+  if(mappingModal) {
+    mappingModal.addEventListener('click', (e) => {
+      if(e.target === mappingModal) closeMappingModal();
+    });
+  }
+
+  // 简单的连线模拟逻辑
+  const srcFields = document.querySelectorAll('.src-field');
+  const mapSels = document.querySelectorAll('.map-sel');
+  
+  srcFields.forEach(f => {
+    f.addEventListener('click', () => {
+      // 视觉反馈
+      srcFields.forEach(sf => sf.style.borderColor = '');
+      f.style.borderColor = 'var(--accent)';
+      
+      const svg = document.getElementById('mapping-svg');
+      if(svg) {
+        // 画一条示例连接线 (静态演示)
+        svg.innerHTML = '<path d="M 0 100 C 120 100, 140 180, 260 180" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="4 4" />';
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-extract-tab]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('[data-extract-tab]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.extractTab;
+      document.getElementById('pipe-struct').style.display = tab === 'struct' ? 'grid' : 'none';
+      document.getElementById('pipe-unstruct').style.display = tab === 'unstruct' ? 'grid' : 'none';
+    });
+  });
+
+  schemaParseInitial();
+  schemaInitLibrary();
+  schemaSetTab('workspace');
+
+  // ---- 图谱视图：混合/Schema/实例 切换交互 ----
+  // D3 Graph rendering will handle view switching
+  document.querySelectorAll('[data-graph-mode]').forEach(el => {
+    el.addEventListener('click', () => {
+      document.querySelectorAll('[data-graph-mode]').forEach(o => o.classList.remove('active'));
+      el.classList.add('active');
+      renderD3Graph(el.dataset.graphMode);
+    });
+  });
+
+  // ---- 表格操作列：更多下拉菜单交互 ----
+  document.querySelectorAll('[data-menu-toggle]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const menu = btn.nextElementSibling;
+      const isOpen = menu.classList.contains('open');
+      // 先关闭所有其他已经打开的菜单
+      document.querySelectorAll('.action-menu.open').forEach(m => m.classList.remove('open'));
+      if(!isOpen) menu.classList.add('open');
+    });
+  });
+  
+  // 点击页面任意空白处关闭下拉菜单
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.action-menu.open').forEach(m => m.classList.remove('open'));
+  });
+
+  const dbModal = document.getElementById('db-modal');
+  const dbOpenBtn = document.getElementById('btn-add-db');
+  const dbCloseBtn = document.getElementById('db-modal-close');
+  const dbCancelBtn = document.getElementById('db-cancel');
+  const dbConfirmBtn = document.getElementById('db-confirm');
+  const dbError = document.getElementById('db-form-error');
+
+  const dbFields = [
+    document.getElementById('db-name'),
+    document.getElementById('db-host'),
+    document.getElementById('db-port'),
+    document.getElementById('db-database'),
+    document.getElementById('db-user'),
+    document.getElementById('db-password')
+  ];
+
+  function setDbInvalid(el, invalid){
+    el.setAttribute('data-invalid', invalid ? 'true' : 'false');
+  }
+
+  function resetDbForm(){
+    dbFields.forEach(f => { f.value = ''; setDbInvalid(f, false); });
+    document.getElementById('db-type').value = 'MySQL';
+    dbError.textContent = '';
+  }
+
+  function openDbModal(){
+    resetDbForm();
+    dbModal.classList.add('open');
+    dbModal.setAttribute('aria-hidden','false');
+    refreshModalLock();
+    dbFields[0].focus();
+    lucide.createIcons();
+  }
+
+  function closeDbModal(){
+    dbModal.classList.remove('open');
+    dbModal.setAttribute('aria-hidden','true');
+    refreshModalLock();
+    if(dbOpenBtn) dbOpenBtn.focus();
+  }
+
+  function validateDbForm(){
+    dbError.textContent = '';
+    dbFields.forEach(f => setDbInvalid(f, false));
+
+    let ok = true;
+    dbFields.forEach(f => {
+      if(!String(f.value || '').trim()){
+        setDbInvalid(f, true);
+        ok = false;
+      }
+    });
+
+    const portEl = document.getElementById('db-port');
+    const port = String(portEl.value || '').trim();
+    if(port && !/^\d{1,5}$/.test(port)){
+      setDbInvalid(portEl, true);
+      ok = false;
+    }
+
+    if(!ok){
+      dbError.textContent = '请完整填写必填项（端口需为数字）。';
+    }
+    return ok;
+  }
+
+  if(dbOpenBtn){
+    dbOpenBtn.addEventListener('click', openDbModal);
+  }
+  dbCloseBtn.addEventListener('click', closeDbModal);
+  dbCancelBtn.addEventListener('click', closeDbModal);
+
+  dbModal.addEventListener('click', (e) => {
+    if(e.target === dbModal) closeDbModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key !== 'Escape') return;
+    if(schemaPropModal && schemaPropModal.classList.contains('open')) { closeSchemaPropModal(); return; }
+    if(schemaClassModal && schemaClassModal.classList.contains('open')) { closeSchemaClassModal(); return; }
+    if(dbModal.classList.contains('open')) closeDbModal();
+  });
+
+  dbFields.forEach(f => {
+    f.addEventListener('input', () => { setDbInvalid(f, false); dbError.textContent = ''; });
+  });
+
+  dbConfirmBtn.addEventListener('click', () => {
+    if(validateDbForm()) closeDbModal();
+  });
+
+  // ---- D3.js 力导向图实现 ----
+  const graphData = {
+    nodes: [
+      { id: 'c1', type: 'class', label: '设备', group: 1, dp: 6, op: 2, inst: 823 },
+      { id: 'c2', type: 'class', label: '产线', group: 1, dp: 4, op: 1, inst: 12 },
+      { id: 'c3', type: 'class', label: '供应商', group: 1, dp: 5, op: 1, inst: 45 },
+      { id: 'c4', type: 'class', label: '工序', group: 1, dp: 3, op: 2, inst: 56 },
+      { id: 'c5', type: 'class', label: '缺陷记录', group: 1, dp: 8, op: 1, inst: 1204 },
+      // 对象属性
+      { id: 'op1', type: 'obj_prop', label: '属于产线' },
+      { id: 'op2', type: 'obj_prop', label: '生产厂商' },
+      { id: 'op3', type: 'obj_prop', label: '供应' },
+      { id: 'op4', type: 'obj_prop', label: '发生于' },
+      // 数据属性
+      { id: 'dp1', type: 'data_prop', label: '设备编号' },
+      { id: 'dp2', type: 'data_prop', label: '投运日期' },
+      { id: 'dp3', type: 'data_prop', label: '产线名称' },
+      // 实例
+      { id: 'i1', type: 'instance', label: 'GY-01', classId: 'c1' },
+      { id: 'i2', type: 'instance', label: 'GY-02', classId: 'c1' },
+      { id: 'i3', type: 'instance', label: 'DK-05', classId: 'c1' },
+      { id: 'i4', type: 'instance', label: 'Line-A', classId: 'c2' },
+      { id: 'i5', type: 'instance', label: 'Sup-08', classId: 'c3' }
+    ],
+    links: [
+      // Schema 边 (连接 类与属性)
+      { source: 'c1', target: 'op1', type: 'schema_link' },
+      { source: 'op1', target: 'c2', type: 'schema_link' },
+      { source: 'c1', target: 'op2', type: 'schema_link' },
+      { source: 'op2', target: 'c3', type: 'schema_link' },
+      { source: 'c2', target: 'op3', type: 'schema_link' },
+      { source: 'op3', target: 'c3', type: 'schema_link' },
+      { source: 'c1', target: 'op4', type: 'schema_link' },
+      { source: 'op4', target: 'c4', type: 'schema_link' },
+      
+      { source: 'c1', target: 'dp1', type: 'schema_link' },
+      { source: 'c1', target: 'dp2', type: 'schema_link' },
+      { source: 'c2', target: 'dp3', type: 'schema_link' },
+
+      // 实例边 (隶属关系)
+      { source: 'i1', target: 'c1', type: 'instance_of' },
+      { source: 'i2', target: 'c1', type: 'instance_of' },
+      { source: 'i3', target: 'c1', type: 'instance_of' },
+      { source: 'i4', target: 'c2', type: 'instance_of' },
+      { source: 'i5', target: 'c3', type: 'instance_of' },
+      // 实例关系边
+      { source: 'i1', target: 'i4', label: '属于产线', type: 'instance_rel' },
+      { source: 'i2', target: 'i4', label: '属于产线', type: 'instance_rel' },
+      { source: 'i1', target: 'i5', label: '生产厂商', type: 'instance_rel' }
+    ]
+  };
+
+  let d3Sim = null;
+
+  function renderD3Graph(mode = 'mixed') {
+    const svgEl = document.getElementById('d3-graph-svg');
+    if (!svgEl) return;
+    const width = svgEl.clientWidth || 760;
+    const height = svgEl.clientHeight || 480;
+
+    d3.select(svgEl).selectAll('*').remove();
+
+    // 过滤数据
+    let nodes = [];
+    let links = [];
+
+    if (mode === 'schema') {
+      nodes = graphData.nodes.filter(n => ['class', 'obj_prop', 'data_prop'].includes(n.type));
+      links = graphData.links.filter(l => l.type === 'schema_link');
+    } else if (mode === 'instance') {
+      nodes = graphData.nodes.filter(n => n.type === 'instance');
+      links = graphData.links.filter(l => l.type === 'instance_rel');
+    } else {
+      nodes = [...graphData.nodes];
+      links = [...graphData.links];
+    }
+
+    // 复制数据防止突变破坏原始数据
+    const simNodes = nodes.map(d => ({...d}));
+    const simLinks = links.map(d => ({...d}));
+
+    const svg = d3.select(svgEl).attr('viewBox', [0, 0, width, height]);
+    const container = svg.append('g');
+
+    // 缩放
+    svg.call(d3.zoom()
+      .scaleExtent([0.3, 3])
+      .on('zoom', (event) => { container.attr('transform', event.transform); })
+    );
+
+    // 力导向图
+    d3Sim = d3.forceSimulation(simNodes)
+      .force('link', d3.forceLink(simLinks).id(d => d.id).distance(d => {
+        if(d.type === 'schema_link') return 60;
+        if(d.type === 'instance_of') return 50;
+        return 120;
+      }))
+      .force('charge', d3.forceManyBody().strength(-200))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collide', d3.forceCollide().radius(d => {
+        if(d.type === 'class') return 40;
+        if(d.type === 'obj_prop') return 30;
+        if(d.type === 'data_prop') return 25;
+        return 20;
+      }));
+
+    // 连线
+    const link = container.append('g')
+      .selectAll('line')
+      .data(simLinks)
+      .join('line')
+      .attr('stroke', d => {
+        if(d.type === 'instance_of') return '#C9C4F5';
+        if(d.type === 'schema_link') return '#CBD5E1';
+        return '#0C8F8A';
+      })
+      .attr('stroke-width', d => d.type === 'schema_link' ? 1.5 : (d.type === 'instance_of' ? 1.2 : 1.6))
+      .attr('stroke-dasharray', d => d.type === 'instance_of' ? '3 3' : 'none')
+      .attr('opacity', 0.85);
+
+    // 连线标签
+    const linkText = container.append('g')
+      .selectAll('text')
+      .data(simLinks.filter(d => d.label))
+      .join('text')
+      .attr('font-family', 'IBM Plex Mono')
+      .attr('font-size', 10)
+      .attr('fill', '#0C8F8A')
+      .attr('text-anchor', 'middle')
+      .text(d => d.label);
+
+    // 节点组
+    const node = container.append('g')
+      .selectAll('g')
+      .data(simNodes)
+      .join('g')
+      .call(d3.drag()
+        .on('start', dragstarted)
+        .on('drag', dragged)
+        .on('end', dragended))
+      .on('click', (event, d) => showNodeDetail(d))
+      .style('cursor', 'pointer');
+
+    // 节点圆圈
+    node.append('circle')
+      .attr('r', d => {
+        if(d.type === 'class') return 26;
+        if(d.type === 'obj_prop') return 20;
+        if(d.type === 'data_prop') return 16;
+        return 13;
+      })
+      .attr('fill', d => {
+        if(d.type === 'class') return '#FBF0DC';
+        if(d.type === 'obj_prop') return '#E0F5F4';
+        if(d.type === 'data_prop') return '#EBF3FC';
+        return '#ECE8FC';
+      })
+      .attr('stroke', d => {
+        if(d.type === 'class') return '#C97A1E';
+        if(d.type === 'obj_prop') return '#0C8F8A';
+        if(d.type === 'data_prop') return '#3A76D2';
+        return '#6E5CE0';
+      })
+      .attr('stroke-width', d => d.type === 'class' ? 2 : 1.8)
+      .on('mouseover', function() { d3.select(this).attr('stroke-width', 3); })
+      .on('mouseout', function(e, d) { d3.select(this).attr('stroke-width', d.type === 'class' ? 2 : 1.8); });
+
+    // 节点文本
+    node.append('text')
+      .attr('y', d => d.type === 'class' ? 4 : 3)
+      .attr('text-anchor', 'middle')
+      .attr('font-family', d => ['class','obj_prop','data_prop'].includes(d.type) ? 'Inter' : 'IBM Plex Mono')
+      .attr('font-weight', d => ['class','obj_prop'].includes(d.type) ? 700 : 500)
+      .attr('font-size', d => {
+        if(d.type === 'class') return 12;
+        if(d.type === 'obj_prop') return 10.5;
+        if(d.type === 'data_prop') return 9.5;
+        return 8;
+      })
+      .attr('fill', d => {
+        if(d.type === 'class') return '#8A5A15';
+        if(d.type === 'obj_prop') return '#096B67';
+        if(d.type === 'data_prop') return '#295BAC';
+        return '#5545C4';
+      })
+      .text(d => d.label);
+
+    d3Sim.on('tick', () => {
+      link
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+
+      linkText
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2 - 5);
+
+      node
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
+    function dragstarted(event, d) {
+      if (!event.active) d3Sim.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event, d) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragended(event, d) {
+      if (!event.active) d3Sim.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+  }
+
+  function showNodeDetail(d) {
+    const detailBox = document.getElementById('node-detail-content');
+    if(!detailBox) return;
+    
+    if(d.type === 'class') {
+      detailBox.innerHTML = `
+        <div class="node-detail-row"><span class="k">类型</span><span class="v">owl:Class</span></div>
+        <div class="node-detail-row"><span class="k">rdfs:label</span><span class="v">${d.label}</span></div>
+        <div class="node-detail-row"><span class="k">数据属性</span><span class="v">${d.dp} 个</span></div>
+        <div class="node-detail-row"><span class="k">对象属性</span><span class="v">${d.op} 个</span></div>
+        <div class="node-detail-row"><span class="k">实例数量</span><span class="v">${d.inst}</span></div>
+        <button class="btn btn-secondary" style="width:100%;justify-content:center;margin-top:14px;" onclick="document.querySelector('[data-view=\\'view-schema\\']').click()"><i data-lucide="layers"></i>在 Schema 中编辑此类</button>
+      `;
+    } else if(d.type === 'obj_prop') {
+      detailBox.innerHTML = `
+        <div class="node-detail-row"><span class="k">类型</span><span class="v">owl:ObjectProperty</span></div>
+        <div class="node-detail-row"><span class="k">rdfs:label</span><span class="v">${d.label}</span></div>
+      `;
+    } else if(d.type === 'data_prop') {
+      detailBox.innerHTML = `
+        <div class="node-detail-row"><span class="k">类型</span><span class="v">owl:DatatypeProperty</span></div>
+        <div class="node-detail-row"><span class="k">rdfs:label</span><span class="v">${d.label}</span></div>
+      `;
+    } else {
+      const clsName = graphData.nodes.find(n => n.id === d.classId)?.label || '未知';
+      detailBox.innerHTML = `
+        <div class="node-detail-row"><span class="k">类型</span><span class="v">owl:NamedIndividual</span></div>
+        <div class="node-detail-row"><span class="k">rdfs:label</span><span class="v">${d.label}</span></div>
+        <div class="node-detail-row"><span class="k">所属类</span><span class="v">${clsName}</span></div>
+        <div class="node-detail-row"><span class="k">数据属性</span><span class="v">...</span></div>
+      `;
+    }
+    lucide.createIcons();
+  }
+
+  // 初始化图谱
+  setTimeout(() => { renderD3Graph('mixed'); }, 500);
+
+</script>
+</body>
+</html>

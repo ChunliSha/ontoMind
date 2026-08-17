@@ -1,0 +1,193 @@
+@prefix : <http://ontomind.example.org/power-grid#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# =========================================================
+# 本体元信息
+# =========================================================
+<http://ontomind.example.org/power-grid> a owl:Ontology ;
+    rdfs:label "变电站设备缺陷与检修管理本体"@zh ;
+    rdfs:comment "面向电力行业变电站场景，覆盖设备台账、缺陷发现、检修处理与运维巡检全流程的领域本体，用于从缺陷报告、检修工单、巡检记录等业务文档中抽取实例。"@zh .
+
+
+# =========================================================
+# 1. 类（Classes）
+# =========================================================
+
+### --- 组织/位置 ---
+:Substation a owl:Class ;
+    rdfs:label "变电站"@zh ;
+    rdfs:comment "承载电力设备的变电站，作为设备的物理归属位置。"@zh .
+
+### --- 设备及其子类 ---
+:Equipment a owl:Class ;
+    rdfs:label "设备"@zh ;
+    rdfs:comment "变电站内的一次/二次电力设备。"@zh .
+
+:Transformer a owl:Class ;
+    rdfs:subClassOf :Equipment ;
+    rdfs:label "变压器"@zh .
+
+:CircuitBreaker a owl:Class ;
+    rdfs:subClassOf :Equipment ;
+    rdfs:label "断路器"@zh .
+
+:Disconnector a owl:Class ;
+    rdfs:subClassOf :Equipment ;
+    rdfs:label "隔离开关"@zh .
+
+:Busbar a owl:Class ;
+    rdfs:subClassOf :Equipment ;
+    rdfs:label "母线"@zh .
+
+:Reactor a owl:Class ;
+    rdfs:subClassOf :Equipment ;
+    rdfs:label "电抗器"@zh .
+
+:Manufacturer a owl:Class ;
+    rdfs:label "设备厂商"@zh .
+
+### --- 缺陷及其分级子类 ---
+:Defect a owl:Class ;
+    rdfs:label "缺陷"@zh ;
+    rdfs:comment "设备在巡检或运行中发现的异常状态。"@zh .
+
+:CriticalDefect a owl:Class ;
+    rdfs:subClassOf :Defect ;
+    rdfs:label "危急缺陷"@zh .
+
+:MajorDefect a owl:Class ;
+    rdfs:subClassOf :Defect ;
+    rdfs:label "严重缺陷"@zh .
+
+:GeneralDefect a owl:Class ;
+    rdfs:subClassOf :Defect ;
+    rdfs:label "一般缺陷"@zh .
+
+### --- 业务活动 ---
+:MaintenanceOrder a owl:Class ;
+    rdfs:label "检修工单"@zh ;
+    rdfs:comment "针对某一缺陷或设备发起的检修/消缺任务。"@zh .
+
+:InspectionRecord a owl:Class ;
+    rdfs:label "巡检记录"@zh ;
+    rdfs:comment "运维人员对设备进行例行或专项巡视的记录。"@zh .
+
+### --- 人员 ---
+:Person a owl:Class ;
+    rdfs:label "人员"@zh .
+
+:Inspector a owl:Class ;
+    rdfs:subClassOf :Person ;
+    rdfs:label "巡检员"@zh .
+
+:Maintainer a owl:Class ;
+    rdfs:subClassOf :Person ;
+    rdfs:label "检修人员"@zh .
+
+
+# =========================================================
+# 2. 对象属性（Object Properties）
+# =========================================================
+
+### 顶层泛化属性（用于演示父子属性层级，便于做子属性传递/环检测测试）
+:associatedPerson a owl:ObjectProperty ;
+    rdfs:label "关联人员"@zh ;
+    rdfs:domain [ a owl:Class ; owl:unionOf ( :Defect :MaintenanceOrder :InspectionRecord ) ] ;
+    rdfs:range :Person .
+
+:reportedBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf :associatedPerson ;
+    rdfs:label "缺陷发现人"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range :Person .
+
+:performedBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf :associatedPerson ;
+    rdfs:label "检修执行人"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range :Maintainer .
+
+:conductedBy a owl:ObjectProperty ;
+    rdfs:subPropertyOf :associatedPerson ;
+    rdfs:label "巡检执行人"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range :Inspector .
+
+### 位置关系（互逆属性）
+:locatedInSubstation a owl:ObjectProperty ;
+    rdfs:label "所属变电站"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range :Substation .
+
+:hasEquipment a owl:ObjectProperty ;
+    owl:inverseOf :locatedInSubstation ;
+    rdfs:label "包含设备"@zh ;
+    rdfs:domain :Substation ;
+    rdfs:range :Equipment .
+
+### 设备-缺陷-工单-巡检的业务关联
+:hasDefect a owl:ObjectProperty ;
+    rdfs:label "存在缺陷"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range :Defect .
+
+:handledByOrder a owl:ObjectProperty ;
+    rdfs:label "对应检修工单"@zh ;
+    rdfs:domain :Defect ;
+    rdfs:range :MaintenanceOrder .
+
+:targetEquipment a owl:ObjectProperty ;
+    rdfs:label "工单针对设备"@zh ;
+    rdfs:domain :MaintenanceOrder ;
+    rdfs:range :Equipment .
+
+:inspectedEquipment a owl:ObjectProperty ;
+    rdfs:label "巡检对象设备"@zh ;
+    rdfs:domain :InspectionRecord ;
+    rdfs:range :Equipment .
+
+:manufacturedBy a owl:ObjectProperty ;
+    rdfs:label "生产厂商"@zh ;
+    rdfs:domain :Equipment ;
+    rdfs:range :Manufacturer .
+
+
+# =========================================================
+# 3. 数据属性（Datatype Properties）
+# =========================================================
+
+### 设备属性
+:equipmentCode a owl:DatatypeProperty ; rdfs:label "设备编号"@zh ; rdfs:domain :Equipment ; rdfs:range xsd:string .
+:equipmentName a owl:DatatypeProperty ; rdfs:label "设备名称"@zh ; rdfs:domain :Equipment ; rdfs:range xsd:string .
+:ratedVoltage a owl:DatatypeProperty ; rdfs:label "额定电压"@zh ; rdfs:domain :Equipment ; rdfs:range xsd:string .
+:ratedCapacity a owl:DatatypeProperty ; rdfs:label "额定容量"@zh ; rdfs:domain :Equipment ; rdfs:range xsd:string .
+:commissioningDate a owl:DatatypeProperty ; rdfs:label "投运日期"@zh ; rdfs:domain :Equipment ; rdfs:range xsd:date .
+
+### 缺陷属性
+:defectDescription a owl:DatatypeProperty ; rdfs:label "缺陷描述"@zh ; rdfs:domain :Defect ; rdfs:range xsd:string .
+:discoveryDate a owl:DatatypeProperty ; rdfs:label "发现日期"@zh ; rdfs:domain :Defect ; rdfs:range xsd:date .
+:defectStatus a owl:DatatypeProperty ; rdfs:label "缺陷状态"@zh ; rdfs:domain :Defect ; rdfs:range xsd:string .
+
+### 工单属性
+:orderNo a owl:DatatypeProperty ; rdfs:label "工单编号"@zh ; rdfs:domain :MaintenanceOrder ; rdfs:range xsd:string .
+:orderStatus a owl:DatatypeProperty ; rdfs:label "工单状态"@zh ; rdfs:domain :MaintenanceOrder ; rdfs:range xsd:string .
+:planStartDate a owl:DatatypeProperty ; rdfs:label "计划开始时间"@zh ; rdfs:domain :MaintenanceOrder ; rdfs:range xsd:date .
+:planEndDate a owl:DatatypeProperty ; rdfs:label "计划结束时间"@zh ; rdfs:domain :MaintenanceOrder ; rdfs:range xsd:date .
+:actualCompletionDate a owl:DatatypeProperty ; rdfs:label "实际完成时间"@zh ; rdfs:domain :MaintenanceOrder ; rdfs:range xsd:date .
+:maintenanceMeasures a owl:DatatypeProperty ; rdfs:label "检修措施"@zh ; rdfs:domain :MaintenanceOrder ; rdfs:range xsd:string .
+
+### 巡检记录属性
+:inspectionDate a owl:DatatypeProperty ; rdfs:label "巡检日期"@zh ; rdfs:domain :InspectionRecord ; rdfs:range xsd:date .
+:inspectionType a owl:DatatypeProperty ; rdfs:label "巡检类型"@zh ; rdfs:domain :InspectionRecord ; rdfs:range xsd:string .
+:inspectionResult a owl:DatatypeProperty ; rdfs:label "巡检结论"@zh ; rdfs:domain :InspectionRecord ; rdfs:range xsd:string .
+
+### 人员属性
+:staffName a owl:DatatypeProperty ; rdfs:label "姓名"@zh ; rdfs:domain :Person ; rdfs:range xsd:string .
+:staffId a owl:DatatypeProperty ; rdfs:label "工号"@zh ; rdfs:domain :Person ; rdfs:range xsd:string .
+:contactPhone a owl:DatatypeProperty ; rdfs:label "联系电话"@zh ; rdfs:domain :Person ; rdfs:range xsd:string .
+
+### 厂商属性
+:manufacturerName a owl:DatatypeProperty ; rdfs:label "厂商名称"@zh ; rdfs:domain :Manufacturer ; rdfs:range xsd:string .

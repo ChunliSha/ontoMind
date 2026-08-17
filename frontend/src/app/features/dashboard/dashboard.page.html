@@ -1,0 +1,63 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Welcome</p>
+    <h1>知识建模辅助抽取工具</h1>
+    <p class="lead">从结构化数据库与非结构化文档出发，AI 辅助完成 Schema 设计、实例数据抽取，并以知识图谱形式验证成果 — 一个覆盖本体构建全流程的工作台。</p>
+  </div>
+
+  @if (store.summary(); as s) {
+    <div class="stat-grid">
+      <ui-stat-card icon="database" iconClass="c1" [value]="fmt(s.data_source_count)"
+        [label]="'已接入数据源（结构化 ' + (s.structured_count||0) + ' · 非结构化 ' + (s.unstructured_count||0) + '）'"
+        [trend]="s.data_source_trend ?? 0" />
+      <ui-stat-card icon="layers" iconClass="c2" [value]="fmt(s.schema_count)"
+        [label]="'已设计 Schema（含 ' + (s.class_count||0) + ' 个类）'"
+        [trend]="s.schema_trend ?? 0" />
+      <ui-stat-card icon="boxes" iconClass="c3" [value]="fmt(s.instance_count)"
+        label="已抽取本体实例" [trend]="s.instance_trend ?? 0" />
+      <ui-stat-card icon="network" iconClass="c4" [value]="fmt(s.graph_version_count)"
+        label="可视化图谱版本" trend="--" />
+    </div>
+  } @else if (store.loading()) {
+    <div class="panel" style="padding:24px;color:var(--text-500)">加载中…</div>
+  } @else {
+    <div class="stat-grid">
+      <ui-stat-card icon="database" iconClass="c1" value="—" label="已接入数据源" trend="--" />
+      <ui-stat-card icon="layers" iconClass="c2" value="—" label="已设计 Schema" trend="--" />
+      <ui-stat-card icon="boxes" iconClass="c3" value="—" label="已抽取本体实例" trend="--" />
+      <ui-stat-card icon="network" iconClass="c4" value="—" label="可视化图谱版本" trend="--" />
+    </div>
+  }
+
+  <div class="pipeline-block">
+    <h2>快速上手 · 四步构建本体</h2>
+    <p class="pipeline-sub">按顺序完成以下步骤，即可从原始数据得到一份可探索的知识图谱</p>
+    <div class="pipeline">
+      <ui-pipeline-step num="01" icon="database" title="业务数据集成"
+        desc="接入结构化数据库（PostgreSQL / MySQL / GaussDB）表数据，或上传非结构化文档，作为建模原料。"
+        link="/data/unstructured" linkText="前往数据集成" />
+      <ui-pipeline-step num="02" icon="layers" title="Schema 抽取与设计"
+        desc="选择已接入的数据，AI 自动抽取类、对象属性、数据属性，人工审视修改后确认。"
+        link="/schema" linkText="前往 Schema 设计" />
+      <ui-pipeline-step num="03" icon="sparkles" title="AI 辅助抽取"
+        desc="基于确认后的 Schema，从数据源中自动抽取符合约束的实例数据及业务逻辑。"
+        link="/extraction/instances" linkText="前往 AI 辅助抽取" />
+      <ui-pipeline-step num="04" icon="network" title="图谱探索"
+        desc="将 Schema 与实例以知识图谱形式可视化，支持 Schema 视图与实例视图独立查看。"
+        link="/graph" linkText="前往图谱探索" />
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h3>最近动态</h3></div>
+    @for (a of store.activity(); track a.id) {
+      <div class="activity-row">
+        <span class="act-dot" [style.background]="a.color || 'var(--accent)'"></span>
+        <span class="act-txt" [innerHTML]="a.text"></span>
+        <span class="act-time">{{ a.created_at | relativeTime }}</span>
+      </div>
+    } @empty {
+      <div style="padding:18px;color:var(--text-400);font-size:13px;">暂无动态</div>
+    }
+  </div>
+</section>

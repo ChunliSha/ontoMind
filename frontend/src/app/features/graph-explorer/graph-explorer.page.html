@@ -1,0 +1,56 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 04 · 图谱探索</p>
+    <div class="view-head-row">
+      <div>
+        <h1>图谱探索</h1>
+        <p class="lead">以力导向图可视化 Schema 与实例，支持模式切换与节点详情。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <!-- TODO(spec-conflict): prototype used TTL file input; API uses schema_id -->
+    <label>Schema
+      <select [ngModel]="store.schemaId()" (ngModelChange)="store.setSchema($event)">
+        @for (s of store.schemas(); track s.id) {
+          <option [value]="s.id">{{ s.name }} (v{{ s.version }})</option>
+        }
+      </select>
+    </label>
+    <ui-seg-group
+      [options]="[{id:'mixed',label:'混合'},{id:'schema',label:'Schema'},{id:'instance',label:'实例'}]"
+      [value]="store.mode()"
+      (valueChange)="onMode($event)" />
+    <ui-search-box placeholder="搜索节点" [value]="store.search()" (valueChange)="store.search.set($event)" />
+    <div style="flex:1"></div>
+    <button class="icon-btn" type="button" title="放大" (click)="graph?.zoomBy(1.2)"><svg lucideIcon="zoom-in" [size]="16"></svg></button>
+    <button class="icon-btn" type="button" title="缩小" (click)="graph?.zoomBy(0.8)"><svg lucideIcon="zoom-out" [size]="16"></svg></button>
+    <button class="icon-btn" type="button" title="重置" (click)="graph?.resetZoom()"><svg lucideIcon="maximize-2" [size]="16"></svg></button>
+  </div>
+
+  <div class="graph-split">
+    <div class="graph-canvas panel">
+      @if (!store.nodes().length && !store.loading()) {
+        <ui-empty-state title="暂无图谱数据" desc="请先发布 Schema 或完成实例抽取" />
+      }
+      <app-d3-force-graph
+        [nodes]="store.nodes()"
+        [links]="store.links()"
+        [search]="store.search()"
+        (nodeClick)="store.selectNode($event)" />
+    </div>
+    <div class="panel node-detail-panel">
+      <div class="panel-head"><h3>节点详情</h3></div>
+      @if (store.detail(); as d) {
+        <div id="node-detail-content">
+          @for (f of d.fields; track f.key) {
+            <div class="node-detail-row"><span class="k">{{ f.key }}</span><span class="v">{{ f.value }}</span></div>
+          }
+        </div>
+      } @else {
+        <div style="padding:16px;color:var(--text-400);font-size:13px;">点击图中节点查看详情</div>
+      }
+    </div>
+  </div>
+</section>

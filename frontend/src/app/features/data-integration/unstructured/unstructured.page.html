@@ -1,0 +1,79 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 01 · 业务数据集成</p>
+    <div class="view-head-row">
+      <div>
+        <h1>非结构化数据管理</h1>
+        <p class="lead">上传业务文档，解析文本并转换为标准 MD / 本体 MD，作为 Schema 归纳与实例抽取的输入。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-bottom:14px;">
+    <label class="filter-pill" style="gap:8px;">
+      存储目标
+      <select [ngModel]="store.storageBackend()" (ngModelChange)="store.storageBackend.set($event)">
+        <option value="local">本地</option>
+        <option value="minio">MinIO</option>
+      </select>
+    </label>
+  </div>
+
+  <ui-dropzone (filesSelected)="store.upload($event)" />
+
+  <div class="toolbar" style="margin-top:18px;">
+    <ui-search-box placeholder="搜索文件名" [value]="store.search()" (valueChange)="onSearch($event)" />
+  </div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>文件名</th><th>类型</th><th>大小</th><th>存储</th><th>状态</th><th>更新时间</th><th>操作</th>
+        </tr></thead>
+        <tbody>
+          @for (f of store.items(); track f.id) {
+            <tr>
+              <td class="cell-main">
+                <div class="file-ic" style="background:var(--accent-soft);color:var(--accent-dark);"><svg lucideIcon="file-text" [size]="16"></svg></div>
+                <div><div class="cell-title">{{ f.name }}</div></div>
+              </td>
+              <td><ui-badge variant="b-neutral">{{ f.file_type }}</ui-badge></td>
+              <td>{{ f.size_bytes | fileSize }}</td>
+              <td>{{ f.storage_backend }}</td>
+              <td><ui-badge [variant]="statusBadge(f.status)">{{ statusLabel(f.status) }}</ui-badge></td>
+              <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">{{ f.updated_at | relativeTime }}</td>
+              <td><ui-action-menu [items]="menuItems" (action)="onAction(f, $event)" /></td>
+            </tr>
+          } @empty {
+            <tr><td colspan="7"><ui-empty-state title="暂无文件" desc="拖拽或选择文件开始上传" /></td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<ui-modal [open]="renameOpen()" title="重命名" (closed)="renameOpen.set(false)" width="420px">
+  <label>新文件名<input [(ngModel)]="renameValue" /></label>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="renameOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="saveRename()">保存</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="editOpen()" title="编辑正文" (closed)="editOpen.set(false)" width="720px">
+  <textarea rows="16" style="width:100%;font-family:var(--f-mono);font-size:12.5px;" [(ngModel)]="editText"></textarea>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="editOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="saveEdit()">保存</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="sqlOpen()" title="构建表 SQL" (closed)="sqlOpen.set(false)" width="720px">
+  <ui-code-block title="DDL 预览" [code]="sqlDdl" />
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="sqlOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="materialize()">创建表</button>
+  </div>
+</ui-modal>

@@ -1,0 +1,154 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">System · AI</p>
+    <div class="view-head-row">
+      <div>
+        <h1>模型管理</h1>
+        <p class="lead">配置主流云大模型，或接入本地 / 内网已部署的 OpenAI 兼容服务，供 Schema 抽取等任务选用。</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" type="button" (click)="presetModalOpen.set(true)">
+          <svg lucideIcon="download" [size]="15"></svg>从模板导入
+        </button>
+        <button class="btn btn-primary" type="button" (click)="openCreate()">
+          <svg lucideIcon="plus" [size]="15"></svg>新增模型
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toolbar" style="margin-bottom:14px;">
+    <label class="filter-pill" style="gap:8px;">
+      来源
+      <select [ngModel]="store.sourceFilter()" (ngModelChange)="store.sourceFilter.set($event); store.load()">
+        <option value="">全部</option>
+        <option value="cloud">云厂商</option>
+        <option value="local">本地 / 内网</option>
+      </select>
+    </label>
+    <button class="btn btn-ghost btn-sm" type="button" (click)="store.load()">
+      <svg lucideIcon="refresh-cw" [size]="14"></svg>刷新
+    </button>
+  </div>
+
+  <div class="panel">
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>来源</th>
+            <th>提供商</th>
+            <th>模型 ID</th>
+            <th>API Base</th>
+            <th>状态</th>
+            <th>默认</th>
+            <th>最近测试</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (m of store.items(); track m.id) {
+            <tr>
+              <td class="cell-title">{{ m.name }}</td>
+              <td>
+                <ui-badge [variant]="m.source === 'local' ? 'b-inst' : 'b-accent'">
+                  {{ m.source === 'local' ? '本地' : '云厂商' }}
+                </ui-badge>
+              </td>
+              <td>{{ providerLabel(m.provider) }}</td>
+              <td style="font-family:var(--f-mono);font-size:12px;">{{ m.model_name }}</td>
+              <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" [title]="m.api_base || ''">
+                {{ m.api_base || '—' }}
+              </td>
+              <td><ui-badge [variant]="statusBadge(m.status)">{{ statusLabel(m.status) }}</ui-badge></td>
+              <td>@if (m.is_default) { <ui-badge variant="b-success">默认</ui-badge> }</td>
+              <td style="font-size:12px;color:var(--text-400);">
+                {{ m.last_tested_at ? (m.last_tested_at | relativeTime) : '—' }}
+              </td>
+              <td class="row-actions">
+                <button class="icon-btn" type="button" title="测试连接" (click)="store.test(m.id)">
+                  <svg lucideIcon="circle-dot" [size]="14"></svg>
+                </button>
+                @if (!m.is_default && m.status === 'active') {
+                  <button class="btn btn-ghost btn-sm" type="button" (click)="store.setDefault(m.id)">设为默认</button>
+                }
+                <button class="icon-btn" type="button" title="编辑" (click)="openEdit(m)">
+                  <svg lucideIcon="pencil" [size]="14"></svg>
+                </button>
+                <button class="icon-btn" type="button" title="删除" (click)="remove(m)">
+                  <svg lucideIcon="trash-2" [size]="14"></svg>
+                </button>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="9">
+                <ui-empty-state title="暂无模型配置" desc="可从主流模板导入，或手动添加本地 OpenAI 兼容服务" />
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<ui-modal [open]="modalOpen()" [title]="editing() ? '编辑模型' : '新增模型'" (closed)="modalOpen.set(false)" width="560px">
+  <form [formGroup]="form" class="form-grid">
+    <label>显示名称<input formControlName="name" placeholder="例如：DeepSeek Chat" /></label>
+    <label>来源
+      <select formControlName="source">
+        <option value="cloud">云厂商</option>
+        <option value="local">本地 / 内网部署</option>
+      </select>
+    </label>
+    <label>提供商
+      <select formControlName="provider">
+        <option value="openai">OpenAI</option>
+        <option value="azure_openai">Azure OpenAI</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="qwen">通义千问</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="moonshot">Moonshot / Kimi</option>
+        <option value="ollama">Ollama</option>
+        <option value="vllm">vLLM</option>
+        <option value="local_openai">本地 OpenAI 兼容</option>
+        <option value="custom">自定义</option>
+        <option value="mock">Mock（演示）</option>
+      </select>
+    </label>
+    <label>API Base URL
+      <input formControlName="api_base" placeholder="https://api.openai.com/v1 或 http://host:port/v1" />
+    </label>
+    <label>API Key（本地可留空）
+      <input type="password" formControlName="api_key" [placeholder]="editing()?.has_api_key ? '已配置，留空则不修改' : 'sk-…'" />
+    </label>
+    <label>模型名 / Model ID
+      <input formControlName="model_name" placeholder="gpt-4o-mini / qwen2.5:7b" />
+    </label>
+    <label class="check"><input type="checkbox" formControlName="is_default" /> 设为默认模型</label>
+  </form>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="modalOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="save()">保存</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="presetModalOpen()" title="从主流模板导入" (closed)="presetModalOpen.set(false)" width="640px">
+  <p style="font-size:12.5px;color:var(--text-500);margin-bottom:12px;">选择模板后可修改 API Key 与模型名再保存。</p>
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    @for (p of store.presets(); track p.id) {
+      <button type="button" class="src-item" style="width:100%;text-align:left;border:1px solid var(--border);cursor:pointer;"
+        (click)="openCreate(p)">
+        <svg lucideIcon="sparkles" [size]="14"></svg>
+        <span class="nm">{{ p.name }}</span>
+        <span class="ct">{{ p.source === 'local' ? '本地' : '云' }} · {{ p.model_name }}</span>
+      </button>
+      <div style="font-size:11.5px;color:var(--text-400);margin:-4px 0 8px 32px;">{{ p.hint }}</div>
+    }
+  </div>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="presetModalOpen.set(false)">关闭</button>
+  </div>
+</ui-modal>

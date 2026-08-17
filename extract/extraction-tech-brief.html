@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OntoMind · 本体约束下的 LLM 实例抽取</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --ink: #1c1a16;
+      --muted: #5c574e;
+      --line: #d4cfc3;
+      --panel: #fffdf8;
+      --accent: #0f5c4c;
+      --accent-soft: #d8ebe5;
+      --warn: #8a4b12;
+      --code-bg: #1e1c18;
+      --code-ink: #e8e2d6;
+      --mono: "IBM Plex Mono", "Cascadia Code", "Consolas", monospace;
+      --sans: "Source Han Sans SC", "Noto Sans SC", "Segoe UI", sans-serif;
+      --display: "Source Serif 4", "Noto Serif SC", Georgia, serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse 80% 50% at 100% -10%, #e7efe9 0%, transparent 55%),
+        radial-gradient(ellipse 60% 40% at 0% 100%, #ebe4d6 0%, transparent 50%),
+        var(--bg);
+      font: 15px/1.65 var(--sans);
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 40px 28px 72px;
+    }
+
+    header.hero {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 28px;
+      align-items: end;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      font: 600 11px/1 var(--mono);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      font-family: var(--display);
+      font-size: clamp(1.8rem, 3.2vw, 2.45rem);
+      line-height: 1.2;
+      font-weight: 650;
+      margin: 0 0 14px;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.02rem;
+      max-width: 38em;
+    }
+
+    .meta {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 16px 18px;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .meta strong { color: var(--ink); font-weight: 650; }
+    .meta div + div { margin-top: 6px; }
+
+    section {
+      margin: 34px 0;
+    }
+
+    h2 {
+      font-family: var(--display);
+      font-size: 1.35rem;
+      margin: 0 0 12px;
+      letter-spacing: -0.01em;
+    }
+
+    h3 {
+      font-size: 0.95rem;
+      margin: 18px 0 8px;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    p { margin: 0 0 10px; color: var(--ink); }
+    .muted { color: var(--muted); }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 16px 18px;
+    }
+
+    .card h3 { margin-top: 0; }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin: 14px 0 8px;
+    }
+
+    .step {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 12px 10px;
+      min-height: 92px;
+      position: relative;
+    }
+    .step::after {
+      content: "→";
+      position: absolute;
+      right: -11px;
+      top: 40%;
+      color: var(--accent);
+      font-weight: 700;
+      z-index: 1;
+    }
+    .step:last-child::after { content: none; }
+    .step .n {
+      font: 600 10px/1 var(--mono);
+      color: var(--accent);
+      letter-spacing: 0.08em;
+    }
+    .step .t {
+      display: block;
+      margin-top: 8px;
+      font-weight: 700;
+      font-size: 13.5px;
+    }
+    .step .d {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      background: var(--panel);
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #ece7dc;
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    pre, code { font-family: var(--mono); }
+    pre {
+      margin: 10px 0;
+      padding: 14px 16px;
+      background: var(--code-bg);
+      color: var(--code-ink);
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.55;
+      border: 1px solid #2c2924;
+    }
+    code.inline {
+      background: #ebe6da;
+      padding: 1px 5px;
+      font-size: 0.9em;
+    }
+
+    .formula {
+      font-family: var(--mono);
+      background: var(--accent-soft);
+      border: 1px solid #b7d5cb;
+      padding: 12px 14px;
+      font-size: 12.5px;
+      margin: 10px 0;
+    }
+
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--panel);
+      padding: 12px 14px;
+      margin: 12px 0;
+      font-size: 13.5px;
+    }
+    .callout.warn {
+      border-left-color: var(--warn);
+      background: #f8efe4;
+    }
+
+    ul.compact {
+      margin: 6px 0 0;
+      padding-left: 1.15em;
+    }
+    ul.compact li { margin: 3px 0; }
+
+    footer {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 860px) {
+      header.hero, .grid-2, .grid-3, .pipeline {
+        grid-template-columns: 1fr;
+      }
+      .step::after { content: "↓"; right: 50%; top: auto; bottom: -14px; }
+    }
+
+    @media print {
+      body { background: #fff; }
+      .page { padding: 12px; max-width: none; }
+      .card, .step, .meta, pre, table { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">OntoMind · Technical Brief</p>
+        <h1>本体约束下的 LLM<br />实例抽取技术说明</h1>
+        <p class="lead">
+          面向已有 Schema（类 / 对象属性 / 数据属性），从非结构化业务文档中抽取可落地到 RDF 的 ABox 实例与关系。
+          实现入口：<code class="inline">extract/populate_ontology.py</code>。
+        </p>
+      </div>
+      <aside class="meta">
+        <div><strong>问题定位</strong>：TBox 已定 → 抽 ABox，而非从零归纳 Schema</div>
+        <div><strong>技术路线</strong>：Schema-grounded LLM + 结构化输出 + 对齐落库</div>
+        <div><strong>栈</strong>：semantica · OpenAI-compatible LLM · rdflib / TTL</div>
+        <div><strong>样例域</strong>：电力缺陷检修（变电站 / 设备 / 缺陷 / 工单）</div>
+      </aside>
+    </header>
+
+    <section>
+      <h2>1. 端到端流水线</h2>
+      <div class="pipeline">
+        <div class="step">
+          <span class="n">01</span>
+          <span class="t">读 Schema</span>
+          <span class="d">OntologyIngestor<br />类 / 对象属性 / 数据属性</span>
+        </div>
+        <div class="step">
+          <span class="n">02</span>
+          <span class="t">读文档</span>
+          <span class="d">FileIngestor<br />样例 MD → 纯文本</span>
+        </div>
+        <div class="step">
+          <span class="n">03</span>
+          <span class="t">LLM 抽取</span>
+          <span class="d">NER → 关系 → 三元组<br />类型受 Schema 约束</span>
+        </div>
+        <div class="step">
+          <span class="n">04</span>
+          <span class="t">对齐</span>
+          <span class="d">别名归一 · mint IRI<br />对象边 / 字面量分流</span>
+        </div>
+        <div class="step">
+          <span class="n">05</span>
+          <span class="t">合并导出</span>
+          <span class="d">TBox ∪ ABox<br />→ populated.ttl</span>
+        </div>
+      </div>
+      <p class="muted">与主站「Schema 归纳」互补：归纳产出骨架；本流水线在骨架上填充个体与关系。</p>
+    </section>
+
+    <section>
+      <h2>2. 实体抽取：核心技术细节</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>不是经典序列标注 NER</h3>
+          <p>采用 <strong>LLM 生成式抽取 + JSON Schema 约束</strong>，类型体系来自领域本体，而不是 PERSON / ORG / GPE。</p>
+          <ul class="compact">
+            <li><code class="inline">methods=["llm"]</code>，关闭通用标准类型</li>
+            <li><code class="inline">entity_types</code> = 本体类（含 LocalName + 中文 label）</li>
+            <li><code class="inline">confidence_threshold=0.7</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>结构化输出保障</h3>
+          <p>通过 instructor + Pydantic（<code class="inline">EntityOut</code>）做 typed generation；自定义 API Base（如 OpenLab）走 <strong>JSON Mode</strong>，避免第三方网关不支持 Tools。</p>
+          <ul class="compact">
+            <li>强制扁平列表：<code class="inline">{"entities":[...]}</code></li>
+            <li>字段：text / label / confidence</li>
+            <li>校验失败带错误信息最多重试 3 次</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Prompt 契约（语义摘要）</h3>
+<pre>Extract named entities from the provided text.
+Return JSON: { "entities": [ { "text", "label", "confidence" }, ... ] }
+
+Preferred entity types: Transformer (变压器), Defect (缺陷), ...
+- Prefer types from the list; close synonyms allowed
+- Flat list only; do not group by type
+- Extract ONLY from the source text below
+
+Text:
+&lt;document&gt;</pre>
+
+      <h3>置信度重打分（过阈值前）</h3>
+      <div class="formula">
+        final = 0.5 × model_confidence + 0.5 × max(label_similarity, content↔type_similarity)
+        <br />保留条件：final ≥ 0.7
+      </div>
+      <p class="muted">
+        模型自评分会与「类型是否贴近 Schema」混合。类型漂移会被拉低；贴合本体的 mention 更容易过线。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 从 mention 到 RDF 实例：第二道闸</h2>
+      <div class="grid-3">
+        <div class="card">
+          <h3>① 别名归一</h3>
+          <p><code class="inline">normalize_term</code> 将
+            <code class="inline">Transformer</code> /
+            <code class="inline">变压器</code> /
+            <code class="inline">Transformer (变压器)</code>
+            映射到 Schema local name；对不齐则丢弃。</p>
+        </div>
+        <div class="card">
+          <h3>② IRI 铸造</h3>
+          <p><code class="inline">#{Class}_{slug(mention)}</code>
+            例：<code class="inline">Transformer_1号主变压器</code>
+            命名空间固定为电力本体 NS。</p>
+        </div>
+        <div class="card">
+          <h3>③ 跨文档去重</h3>
+          <p>同 IRI 只保留首次；关系端点用 mention 字符串包含匹配解析实例，保证边能挂上。</p>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>两层过滤：</strong>LLM 候选 →（置信度 + Schema 相似度）→ 本体类归一 → ABox 实例。
+        因此「NER 实体数」通常大于「对齐后实例数」，属预期行为。
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 关系与三元组（实体之后）</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>阶段</th>
+            <th>输入</th>
+            <th>约束</th>
+            <th>产出</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>RelationExtractor</strong></td>
+            <td>文本 + 已识别实体</td>
+            <td>对象属性类型列表；阈值 0.6</td>
+            <td>实体间对象关系</td>
+          </tr>
+          <tr>
+            <td><strong>TripletExtractor</strong></td>
+            <td>文本 + 实体 + 关系</td>
+            <td>对象属性 ∪ 数据属性</td>
+            <td>(s, p, o) 三元组；再 validate</td>
+          </tr>
+          <tr>
+            <td><strong>map_graph 分流</strong></td>
+            <td>关系 + 三元组</td>
+            <td>谓词别名归一</td>
+            <td>对象边 → 实例链；数据属性 → Literal（date 后缀用 xsd:date）</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted" style="margin-top:10px;">实体质量直接决定边能否对齐：端点解析失败的关系会被静默丢弃。</p>
+    </section>
+
+    <section>
+      <h2>5. 与经典 NER / 开放域 IE 的对比</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>维度</th>
+            <th>本方案（Schema-grounded LLM）</th>
+            <th>经典 spaCy / 序列标注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>类型体系</td>
+            <td>领域本体类（封闭 + 软同义）</td>
+            <td>通用标签 PERSON/ORG/GPE…</td>
+          </tr>
+          <tr>
+            <td>适配成本</td>
+            <td>换 TTL 即可换域，少训练</td>
+            <td>需标注数据或迁移学习</td>
+          </tr>
+          <tr>
+            <td>可落地性</td>
+            <td>对齐后直接进 RDF ABox</td>
+            <td>需额外映射层</td>
+          </tr>
+          <tr>
+            <td>风险</td>
+            <td>幻觉 mention、类型漂移、同名合并粗</td>
+            <td>领域外召回差、类型不匹配本体</td>
+          </tr>
+          <tr>
+            <td>位置信息</td>
+            <td>LLM 路径常缺可靠 offset</td>
+            <td>有稳定字符跨度</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. 工程要点（给评审的结论）</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>设计选择</h3>
+          <ul class="compact">
+            <li>用 Schema 当约束，不做开放域百科抽取</li>
+            <li>结构化输出优先于自由文本后解析</li>
+            <li>TBox 原样保留，输出 = Schema ∪ 实例</li>
+            <li>对象属性 / 数据属性显式分流</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>已知边界</h3>
+          <ul class="compact">
+            <li>跨文档实体合并偏启发式（字符串包含）</li>
+            <li>md 摄入可能告警但可读文本</li>
+            <li>长文依赖 chunk；网关需 OpenAI 兼容</li>
+            <li>对齐失败静默丢弃，需靠摘要日志观察召回</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout warn">
+        <strong>一句话结论：</strong>本抽取不是「找专名」，而是在给定电力检修本体类型集合中，用 LLM 结构化生成候选提及，经置信度与 Schema 对齐双重过滤后，铸造成可合并进 TTL 的 RDF 个体与关系。
+      </div>
+    </section>
+
+    <footer>
+      <span>OntoMind · extract/populate_ontology.py · 技术说明页</span>
+      <span>适用于专家评审 / 内部技术分享 · 可直接浏览器打开或打印</span>
+    </footer>
+  </div>
+</body>
+</html>

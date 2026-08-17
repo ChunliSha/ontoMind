@@ -1,0 +1,34 @@
+.step-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.step-card { background:var(--card); border:1px solid var(--border); border-radius:var(--r-md); padding:12px; display:flex; gap:10px; align-items:center; }
+.step-card.active { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+.step-num { width:28px; height:28px; border-radius:50%; background:var(--neutral-soft); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
+.step-card.active .step-num { background:var(--accent); color:#fff; }
+.step-label { font-size:13px; color:var(--text-700); }
+.file-pick-list { display:flex; flex-direction:column; gap:8px; max-height:280px; overflow:auto; }
+.file-pick { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; }
+.stats-bars { display:flex; flex-direction:column; gap:8px; }
+.stat-bar-row { display:grid; grid-template-columns:120px 1fr 48px; gap:10px; align-items:center; font-size:13px; padding:4px 6px; border-radius:6px; }
+.stat-bar-row:hover { background:var(--surface, rgba(0,0,0,.03)); }
+.stat-bar-row.active { background:var(--accent-soft, rgba(110,92,224,.12)); box-shadow:inset 0 0 0 1px var(--accent); }
+.mini-bar { height:8px; background:var(--neutral-soft); border-radius:99px; overflow:hidden; }
+.mini-bar > div { height:100%; background:var(--inst-c); }
+.mapping-panes { display:grid; grid-template-columns:1fr 140px 1fr; gap:12px; min-height:300px; }
+.map-pane { border:1px solid var(--border); border-radius:10px; padding:10px; overflow:auto; }
+.map-pane h4 { margin:0 0 8px; font-size:13px; }
+.map-item { padding:8px 10px; border:1px dashed var(--border); border-radius:8px; margin-bottom:6px; cursor:grab; font-size:13px; display:flex; justify-content:space-between; gap:8px; }
+.map-item:hover { background:var(--surface); }
+.map-svg { width:100%; height:120px; }
+.map-link-row { font-size:12px; color:var(--text-500); margin-bottom:4px; font-family:var(--f-mono); }
+.th-filter { padding:4px 8px !important; min-width:120px; }
+.th-filter-select {
+  width:100%;
+  border:none;
+  background:transparent;
+  font:inherit;
+  font-weight:600;
+  color:inherit;
+  cursor:pointer;
+  padding:2px 0;
+  outline:none;
+}
+.th-filter-select:focus { box-shadow:none; }

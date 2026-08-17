@@ -1,0 +1,94 @@
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"><svg lucideIcon="git-branch" [size]="18"></svg></div>
+      <div>
+        <div class="brand-name">OntoMind</div>
+        <div class="brand-sub">知识建模辅助抽取工具</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a class="nav-item" routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact:true}">
+        <svg lucideIcon="layout-dashboard" [size]="16"></svg><span>快速指引</span>
+      </a>
+
+      <div class="nav-group" [class.open]="dataOpen()">
+        <div class="nav-group-title" (click)="dataOpen.set(!dataOpen())">
+          <span class="nav-num">01</span>
+          <svg lucideIcon="database" [size]="16"></svg><span>业务数据集成</span>
+          <svg lucideIcon="chevron-down" class="chev" [size]="14"></svg>
+        </div>
+        <div class="nav-subitems">
+          <a class="nav-item sub" routerLink="/data/unstructured" routerLinkActive="active"><span>非结构化数据管理</span></a>
+          <a class="nav-item sub" routerLink="/data/structured" routerLinkActive="active"><span>结构化数据管理</span></a>
+        </div>
+      </div>
+
+      <a class="nav-item" routerLink="/schema" routerLinkActive="active">
+        <span class="nav-num">02</span><svg lucideIcon="layers" [size]="16"></svg><span>Schema 抽取与设计</span>
+      </a>
+
+      <a class="nav-item" routerLink="/models" routerLinkActive="active">
+        <span class="nav-num">02b</span><svg lucideIcon="sparkles" [size]="16"></svg><span>模型管理</span>
+      </a>
+
+      <div class="nav-group" [class.open]="extractOpen()">
+        <div class="nav-group-title" (click)="extractOpen.set(!extractOpen())">
+          <span class="nav-num">03</span>
+          <svg lucideIcon="sparkles" [size]="16"></svg><span>AI 辅助抽取</span>
+          <svg lucideIcon="chevron-down" class="chev" [size]="14"></svg>
+        </div>
+        <div class="nav-subitems">
+          <a class="nav-item sub" routerLink="/extraction/instances" routerLinkActive="active"><span>本体抽取</span></a>
+          <a class="nav-item sub" routerLink="/extraction/business-logic" routerLinkActive="active"><span>业务逻辑抽取</span></a>
+        </div>
+      </div>
+
+      <a class="nav-item" routerLink="/graph" routerLinkActive="active">
+        <span class="nav-num">04</span><svg lucideIcon="network" [size]="16"></svg><span>图谱探索</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="foot-avatar">陈</div>
+      <div class="foot-txt">
+        <div class="n">工作空间 · 电力行业</div>
+        <div class="r">知识工程师</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="crumb">OntoMind <svg lucideIcon="chevron-right" [size]="12"></svg> <b>{{ pageTitle() }}</b></div>
+      <div class="topbar-right">
+        <div class="ws-pill"><svg lucideIcon="folder-git-2" [size]="14"></svg>电力设备本体项目</div>
+        <div class="avatar-sm">陈</div>
+      </div>
+    </header>
+    <div class="view-container">
+      <router-outlet />
+    </div>
+  </main>
+</div>
+
+<div class="toast-stack">
+  @for (t of toast.toasts(); track t.id) {
+    <div class="toast" [ngClass]="'toast-' + t.kind">{{ t.message }}</div>
+  }
+</div>
+
+@if (confirm.state().open) {
+  <div class="modal-backdrop" (click)="confirm.answer(false)">
+    <div class="modal" style="width:420px" (click)="$event.stopPropagation()">
+      <div class="modal-head"><h3>{{ confirm.state().title }}</h3></div>
+      <div class="modal-body"><p>{{ confirm.state().message }}</p></div>
+      <div class="modal-foot">
+        <button class="btn btn-secondary" type="button" (click)="confirm.answer(false)">取消</button>
+        <button class="btn" [class.btn-primary]="!confirm.state().danger" [class.btn-danger]="confirm.state().danger"
+          type="button" (click)="confirm.answer(true)">{{ confirm.state().confirmText }}</button>
+      </div>
+    </div>
+  </div>
+}

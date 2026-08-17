@@ -1,0 +1,15 @@
+.toast-stack {
+  position: fixed; right: 20px; bottom: 20px; z-index: 1000;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+  min-width: 240px; max-width: 420px; padding: 12px 14px; border-radius: var(--r-md);
+  background: var(--ink-900); color: #fff; box-shadow: var(--shadow-md); font-size: 13px;
+}
+.toast-success { background: var(--success); }
+.toast-error { background: var(--danger); }
+.toast-warning { background: var(--warning); color: #fff; }
+.toast-info { background: var(--ink-800); }
+.btn-danger { background: var(--danger); color: #fff; border: 0; }
+.nav-group:not(.open) .nav-subitems { display: none; }
+.nav-group.open .chev { transform: rotate(180deg); }

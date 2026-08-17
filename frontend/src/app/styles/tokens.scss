@@ -1,0 +1,46 @@
+﻿:root{
+    --ink-950:#0A0D1B;
+    --ink-900:#111530;
+    --ink-800:#1B2140;
+    --ink-700:#262D52;
+    --ink-line: rgba(255,255,255,0.09);
+    --ink-line-soft: rgba(255,255,255,0.05);
+
+    --surface:#F4F5FA;
+    --card:#FFFFFF;
+    --border:#E3E6EF;
+    --border-strong:#D2D6E6;
+
+    --text-900:#161A2E;
+    --text-700:#3D4262;
+    --text-500:#6B7093;
+    --text-400:#9498B5;
+
+    --accent:#0C8F8A;
+    --accent-dark:#086F6B;
+    --accent-soft:#DFF3F1;
+
+    --class-c:#C97A1E;
+    --class-soft:#FBF0DC;
+    --prop-c:#0C8F8A;
+    --prop-soft:#DFF3F1;
+    --inst-c:#6E5CE0;
+    --inst-soft:#ECE8FC;
+
+    --danger:#D8483F;
+    --danger-soft:#FBE8E6;
+    --success:#268F58;
+    --success-soft:#E3F5EA;
+    --warning:#C1830F;
+    --warning-soft:#FBF0D9;
+    --neutral:#6B7093;
+    --neutral-soft:#EAEBF3;
+
+    --r-sm:6px; --r-md:10px; --r-lg:16px;
+    --shadow-sm:0 1px 2px rgba(15,18,35,.05);
+    --shadow-md:0 6px 20px rgba(15,18,35,.08);
+
+    --f-disp:'Space Grotesk',sans-serif;
+    --f-body:'Inter',sans-serif;
+    --f-mono:'IBM Plex Mono',monospace;
+  }

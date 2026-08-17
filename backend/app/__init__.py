@@ -1,0 +1,1 @@
+"""OntoMind backend application package."""

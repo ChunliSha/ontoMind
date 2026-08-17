@@ -1,0 +1,35 @@
+[project]
+name = "ontomind-backend"
+version = "0.1.0"
+description = "OntoMind ontology extraction backend"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "pydantic-settings>=2.6.0",
+    "pydantic>=2.9.0",
+    "rdflib>=7.1.0",
+    "cryptography>=43.0.0",
+    "python-multipart>=0.0.12",
+    "httpx>=0.28.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "greenlet>=3.1.0",
+    "pypinyin>=0.53.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]

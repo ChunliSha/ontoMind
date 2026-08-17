@@ -1,0 +1,284 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 02 · Schema</p>
+    <div class="view-head-row">
+      <div>
+        <h1>Schema 抽取与设计</h1>
+        <p class="lead">选择已接入的数据，AI 自动抽取类、对象属性与数据属性，人工审视修改后发布。</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" type="button" (click)="fileInput.click()"><svg lucideIcon="upload" [size]="15"></svg>导入 TTL</button>
+        <input #fileInput type="file" accept=".ttl,.turtle" hidden (change)="onImport($event)" />
+        <button class="btn btn-primary" type="button" (click)="openCreateSchema()"><svg lucideIcon="plus" [size]="15"></svg>新建 Schema</button>
+      </div>
+    </div>
+    <div style="font-size:11.5px;color:var(--text-400);margin-top:6px;">{{ store.statusText() }}</div>
+  </div>
+
+  <ui-seg-group [options]="[{id:'workspace',label:'工作区'},{id:'manage',label:'Schema 管理'}]" [value]="tab()" (valueChange)="onTabChange($event)" />
+
+  @if (tab() === 'workspace') {
+    <div class="split" style="margin-top:14px;">
+      <!-- ① 选择用于抽取的数据 -->
+      <div class="panel side-panel">
+        <div class="side-title">① 选择用于抽取的数据</div>
+        <div class="side-desc" style="font-size:12px;color:var(--text-400);margin-bottom:10px;">勾选来自「业务数据集成」的非结构化文档</div>
+
+        <div class="src-group-title">非结构化数据</div>
+        @for (f of store.sourceFiles(); track f.id) {
+          <label class="src-item">
+            <input type="checkbox" class="chk"
+              [checked]="store.selectedFileIds().has(f.id)"
+              [disabled]="f.status !== 'ready'"
+              (change)="onToggleFile(f.id, $event)" />
+            <svg lucideIcon="file-text" [size]="14"></svg>
+            <span class="nm" [title]="f.name">{{ f.name }}</span>
+            <span class="ct">{{ fileStatusLabel(f.status) }}</span>
+          </label>
+        } @empty {
+          <div style="font-size:12.5px;color:var(--text-400);padding:8px 0;">暂无文档，请先在非结构化管理中上传</div>
+        }
+
+        <div class="src-group-title">抽取模型</div>
+        <label style="display:block;margin-bottom:12px;">
+          <select class="form-ctl" style="width:100%;"
+            [ngModel]="store.selectedModelId()"
+            (ngModelChange)="store.selectedModelId.set($event)">
+            <option [ngValue]="null" disabled>请选择模型</option>
+            @for (m of store.models(); track m.id) {
+              <option [ngValue]="m.id">{{ m.name }}{{ m.is_default ? '（默认）' : '' }} · {{ m.model_name }}</option>
+            }
+          </select>
+        </label>
+        @if (store.models().length === 0) {
+          <div style="font-size:12px;color:var(--text-400);margin-bottom:10px;">
+            暂无可用模型，请先前往「模型管理」配置
+          </div>
+        }
+
+        <button class="btn btn-accent" type="button" style="width:100%;justify-content:center;margin-top:8px;"
+          [disabled]="store.extracting() || store.selectedFileCount() === 0 || !store.selectedModelId()"
+          (click)="openExtractModal()">
+          <svg lucideIcon="sparkles" [size]="15"></svg>
+          {{ store.extracting() ? '抽取中…' : '开始抽取' }}
+        </button>
+        <p style="font-size:11px;color:var(--text-400);margin-top:8px;">
+          已选择 {{ store.selectedFileCount() }} 个数据源
+        </p>
+      </div>
+
+      <!-- Schema 工作区 -->
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0;">
+        <div class="panel">
+          <div class="panel-head">
+            <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+              <h3 style="margin:0;">Schema 工作区</h3>
+              <select class="form-ctl" style="height:30px;padding:0 10px;font-size:12px;font-weight:700;max-width:320px;"
+                [ngModel]="store.current()?.id" (ngModelChange)="store.selectSchema($event)">
+                @for (s of store.schemas(); track s.id) {
+                  <option [ngValue]="s.id">{{ s.name }}</option>
+                }
+              </select>
+              @if (store.current(); as cur) {
+                <span class="badge b-neutral" title="与 Schema 管理中为同一条记录">v{{ cur.version }}</span>
+                <button class="icon-btn" type="button" title="编辑名称" (click)="openEditSchema(cur)">
+                  <svg lucideIcon="pencil" [size]="14"></svg>
+                </button>
+              }
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" type="button" [disabled]="!store.current()" (click)="store.exportTtl()">
+                <svg lucideIcon="download" [size]="14"></svg>导出 TTL
+              </button>
+              <button class="btn btn-secondary btn-sm" type="button" [disabled]="!store.current()" (click)="openClassModal()">
+                <svg lucideIcon="plus" [size]="14"></svg>新增类
+              </button>
+              <button class="btn btn-primary btn-sm" type="button" [disabled]="!store.current()" (click)="publishModal.set(true)">
+                <svg lucideIcon="check" [size]="14"></svg>保存 Schema
+              </button>
+            </div>
+          </div>
+
+          @if (store.current()) {
+            <div style="display:grid;grid-template-columns:190px 1fr;min-height:320px;">
+              <div style="border-right:1px solid var(--border);padding:14px 10px;">
+                <div class="class-list">
+                  @for (c of store.classes(); track c.id) {
+                    <button type="button" class="class-chip" [class.active]="c.id === store.selectedClassId()" (click)="store.selectClass(c.id)">
+                      <span class="class-dot"></span>{{ c.label }}
+                      <span class="cnt">{{ c.cnt ?? c.property_count ?? 0 }}</span>
+                    </button>
+                  } @empty {
+                    <ui-empty-state title="暂无类" desc="勾选左侧文档后点击「开始抽取」" />
+                  }
+                </div>
+              </div>
+              <div style="padding:16px 20px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;">
+                  <div>
+                    <div style="font-size:14px;font-weight:700;">
+                      {{ selectedClassLabel() || '未选择类' }}
+                      @if (selectedClassLabel()) { <span class="badge b-class" style="margin-left:6px;">Class</span> }
+                    </div>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" type="button" [disabled]="!store.selectedClassId()" (click)="openPropModal()">
+                    <svg lucideIcon="plus" [size]="14"></svg>添加属性
+                  </button>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table">
+                    <thead><tr><th>属性名</th><th>属性类型</th><th>取值 / 数据类型</th><th>必填</th><th>来源</th><th>操作</th></tr></thead>
+                    <tbody>
+                      @for (p of store.properties(); track p.id) {
+                        <tr>
+                          <td>{{ p.label }}</td>
+                          <td><ui-badge [variant]="p.kind==='object' ? 'b-class' : 'b-prop'">{{ p.kind==='object' ? '对象属性' : '数据属性' }}</ui-badge></td>
+                          <td>{{ p.kind==='object' ? (p.range_class_label || '—') : (p.datatype || '—') }}</td>
+                          <td>{{ p.required ? '是' : '' }}</td>
+                          <td>
+                            @if (p.source === 'ai') {
+                              <ui-badge variant="b-accent">AI{{ p.confidence != null ? ' · ' + p.confidence + '%' : '' }}</ui-badge>
+                            } @else {
+                              <ui-badge variant="b-neutral">人工新增</ui-badge>
+                            }
+                          </td>
+                          <td class="row-actions">
+                            <button class="icon-btn" type="button" (click)="openPropModal(p)"><svg lucideIcon="pencil" [size]="14"></svg></button>
+                            <button class="icon-btn" type="button" (click)="deleteProp(p)"><svg lucideIcon="trash-2" [size]="14"></svg></button>
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr><td colspan="6" style="padding:16px;color:var(--text-400)">选择类后查看属性，或先执行抽取</td></tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div style="padding:24px;"><ui-empty-state title="请选择或新建 Schema" desc="右侧工作区需要一个目标 Schema" /></div>
+          }
+        </div>
+      </div>
+    </div>
+  } @else {
+    <div class="panel" style="margin-top:14px;">
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>名称</th><th>类</th><th>属性</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody>
+            @for (s of store.schemas(); track s.id) {
+              <tr [class.row-active]="s.id === store.current()?.id">
+                <td class="cell-title">
+                  {{ s.name }}
+                  @if (s.id === store.current()?.id) {
+                    <ui-badge variant="b-accent" style="margin-left:6px;">当前工作区</ui-badge>
+                  }
+                </td>
+                <td>{{ s.class_count }}</td>
+                <td>{{ s.property_count }}</td>
+                <td>{{ s.updated_at | relativeTime }}</td>
+                <td class="row-actions">
+                  <button class="btn btn-ghost btn-sm" type="button" (click)="openInWorkspace(s.id)">打开</button>
+                  <button class="icon-btn" type="button" title="编辑名称" (click)="openEditSchema(s)">
+                    <svg lucideIcon="pencil" [size]="14"></svg>
+                  </button>
+                  <button class="icon-btn" type="button" (click)="store.selectSchema(s.id); store.exportTtl()" title="导出"><svg lucideIcon="download" [size]="14"></svg></button>
+                  <button class="icon-btn" type="button" (click)="deleteSchema(s)"><svg lucideIcon="trash-2" [size]="14"></svg></button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" style="padding:16px;color:var(--text-400)">暂无 Schema 记录</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</section>
+
+<ui-modal [open]="schemaModal()" [title]="schemaModalTitle()" (closed)="schemaModal.set(false)" width="480px">
+  <form [formGroup]="schemaForm" class="form-grid" (ngSubmit)="saveSchemaModal()">
+    <label>
+      Schema 名称
+      <input formControlName="name" placeholder="例如：工厂设备本体" maxlength="128" />
+    </label>
+    @if (schemaModalMode() === 'extract') {
+      <div style="font-size:12.5px;color:var(--text-500);line-height:1.5;">
+        可为本次抽取自定义名称；也可选择新建一条 Schema，避免覆盖当前工作区内容。
+      </div>
+      <label class="check" [style.opacity]="!store.current() ? '0.55' : null">
+        <input type="checkbox" formControlName="createNew" [disabled]="!store.current()" />
+        新建 Schema 并写入抽取结果（推荐）
+      </label>
+      @if (!schemaForm.value.createNew && store.current(); as cur) {
+        <div style="font-size:12px;color:var(--text-400);">将更新名称并写入当前 Schema：{{ cur.name }}</div>
+      }
+      @if (!store.current()) {
+        <div style="font-size:12px;color:var(--text-400);">当前无 Schema，将使用上方名称新建后再抽取。</div>
+      }
+    }
+  </form>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="schemaModal.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="saveSchemaModal()">
+      {{ schemaModalMode() === 'extract' ? '确认并开始抽取' : '保存' }}
+    </button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="classModal()" title="新增类" (closed)="classModal.set(false)">
+  <form [formGroup]="classForm" class="form-grid">
+    <label>类名称（rdfs:label）<input formControlName="label" /></label>
+    <label>类标识（LocalName，可选）<input formControlName="local_name" /></label>
+    <label>描述（rdfs:comment，可选）<textarea formControlName="description" rows="3"></textarea></label>
+  </form>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="classModal.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="saveClass()">确定</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="propModal()" [title]="editingProp() ? '编辑属性' : '添加属性'" (closed)="propModal.set(false)">
+  <form [formGroup]="propForm" class="form-grid">
+    <label>属性名称<input formControlName="label" /></label>
+    <label>类型
+      <div class="seg-group">
+        <button type="button" class="seg-btn" [class.active]="propForm.value.kind==='data'" (click)="propForm.patchValue({kind:'data'})">数据属性</button>
+        <button type="button" class="seg-btn" [class.active]="propForm.value.kind==='object'" (click)="propForm.patchValue({kind:'object'})">对象属性</button>
+      </div>
+    </label>
+    @if (propForm.value.kind === 'data') {
+      <label>数据类型（Range）
+        <select formControlName="datatype">
+          <option value="xsd:string">xsd:string</option>
+          <option value="xsd:int">xsd:int</option>
+          <option value="xsd:decimal">xsd:decimal</option>
+          <option value="xsd:boolean">xsd:boolean</option>
+          <option value="xsd:dateTime">xsd:dateTime</option>
+        </select>
+      </label>
+    } @else {
+      <label>值域（Range Class）
+        <select formControlName="range_class_id">
+          <option value="">选择类</option>
+          @for (c of store.classes(); track c.id) { <option [value]="c.id">{{ c.label }}</option> }
+        </select>
+      </label>
+    }
+    <label class="check"><input type="checkbox" formControlName="required" /> 必填</label>
+    <label class="check"><input type="checkbox" formControlName="multi" /> 允许多个值</label>
+  </form>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="propModal.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="saveProp()">确定</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="publishModal()" title="保存 / 发布 Schema" (closed)="publishModal.set(false)">
+  <label>版本说明<textarea [(ngModel)]="changeLog" rows="4" style="width:100%"></textarea></label>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="publishModal.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="store.publish(changeLog); publishModal.set(false)">保存</button>
+  </div>
+</ui-modal>

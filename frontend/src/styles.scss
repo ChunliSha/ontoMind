@@ -1,0 +1,97 @@
+@use 'app/styles/tokens';
+@use 'app/styles/base';
+
+/* Angular shell adapters for prototype classes */
+a { color: inherit; }
+a.pl-link { text-decoration: none; cursor: pointer; }
+a.nav-item { text-decoration: none; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(10, 13, 27, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.modal-backdrop .modal {
+  display: flex; flex-direction: column;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  max-height: min(90vh, 840px);
+  width: min(100%, 520px);
+  overflow: hidden;
+}
+.modal-backdrop .modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 16px 0;
+}
+.modal-backdrop .modal-head h3 {
+  font-family: var(--f-disp); font-size: 15.5px; font-weight: 700;
+}
+.modal-backdrop .modal-body { padding: 14px 16px 16px; overflow: auto; }
+.modal-backdrop .modal-foot,
+.modal-foot-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.form-grid label {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; color: var(--text-500); font-weight: 600;
+}
+.form-grid input,
+.form-grid select,
+.form-grid textarea,
+label > input,
+label > select,
+label > textarea,
+.toolbar select,
+.toolbar input {
+  font: inherit; font-weight: 500; color: var(--text-900);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; background: var(--card);
+}
+.field-error { color: var(--danger); font-size: 11px; font-weight: 500; min-height: 14px; }
+label.check { flex-direction: row !important; align-items: center; gap: 8px !important; font-weight: 500 !important; color: var(--text-700) !important; }
+
+.dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone .dz-title { font-size: 13.5px; font-weight: 600; margin: 8px 0 4px; }
+.dropzone .dz-sub { font-size: 11.5px; color: var(--text-400); }
+
+.code-block {
+  border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: #0F1328;
+}
+.code-block-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; color: #C9CEE6; font-size: 12px; border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.code-block pre {
+  margin: 0; padding: 14px; overflow: auto; max-height: 420px;
+  color: #E8ECFF; font-family: var(--f-mono); font-size: 12px; line-height: 1.55;
+}
+
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 36px 16px; color: var(--text-400); text-align: center;
+}
+.empty-title { font-weight: 600; color: var(--text-700); font-size: 14px; }
+.empty-desc { font-size: 12.5px; }
+
+.chip-list { display: flex; flex-direction: column; gap: 6px; max-height: 520px; overflow: auto; }
+.class-chip {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); background: var(--card); border-radius: 10px;
+  padding: 8px 10px; text-align: left; color: var(--text-700); font-size: 13px;
+}
+.chip-cnt { margin-left: auto; font-size: 10.5px; font-weight: 600; color: var(--text-400); font-family: var(--f-mono); }
+
+.seg-btn {
+  border: 0; background: transparent; padding: 6px 12px; border-radius: 6px;
+  font-size: 12.5px; color: var(--text-500); font-weight: 600;
+}
+.seg-btn.active { background: var(--card); color: var(--text-900); box-shadow: var(--shadow-sm); }
+
+input[data-invalid='true'],
+.ng-invalid.ng-touched {
+  border-color: var(--danger) !important;
+}

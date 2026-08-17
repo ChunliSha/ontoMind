@@ -1,0 +1,282 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 03 · AI 辅助抽取</p>
+    <h1>本体抽取</h1>
+    <p class="lead">从非结构化文档或结构化映射中抽取符合 Schema 的实例数据。</p>
+  </div>
+
+  <ui-seg-group
+    [options]="[{id:'unstruct',label:'非结构化抽取'},{id:'struct',label:'结构化抽取'}]"
+    [value]="store.mode()"
+    (valueChange)="store.mode.set($any($event)); store.step.set(1)" />
+
+  <div class="step-grid" style="margin-top:16px;">
+    @for (n of [1,2,3,4]; track n) {
+      <div class="step-card" [class.active]="store.step()===n" [class.done]="store.step()>n">
+        <div class="step-num">{{ n }}</div>
+        <div class="step-label">{{ ['选择 Schema','选择数据','执行抽取','结果预览'][n-1] }}</div>
+      </div>
+    }
+  </div>
+
+  <div class="panel" style="margin-top:16px;padding:18px;">
+    @if (store.step() === 1) {
+      <label>目标 Schema
+        <select [ngModel]="store.schemaId()" (ngModelChange)="store.setSchema($event)">
+          @for (s of store.schemas(); track s.id) {
+            <option [value]="s.id">{{ s.name }} (v{{ s.version }})</option>
+          }
+        </select>
+      </label>
+
+      @if (store.inventory(); as inv) {
+        <div style="margin-top:16px;padding:14px;border:1px solid var(--border, #e5e7eb);border-radius:8px;">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-size:13px;font-weight:600;">实例库 · {{ inv.schema_name }}</div>
+              <div style="font-size:12px;color:var(--text-400);margin-top:4px;">
+                当前 Schema 版本 v{{ inv.schema_version }} · 筛选
+                <select style="margin-left:6px;"
+                  [ngModel]="store.inventoryVersion()"
+                  (ngModelChange)="store.setInventoryVersion(+$event)">
+                  @for (v of inv.versions; track v) {
+                    <option [ngValue]="v">v{{ v }}</option>
+                  }
+                </select>
+                · 共 {{ inv.total }} 条
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm" type="button" (click)="store.browseInventory()" [disabled]="!inv.total">浏览实例</button>
+              <button class="btn btn-ghost btn-sm" type="button" [disabled]="!inv.total" (click)="confirmClear()">清空本版本</button>
+            </div>
+          </div>
+          @if (inv.by_class.length) {
+            <div class="stats-bars" style="margin-top:12px;">
+              @for (s of inv.by_class; track s.class_id) {
+                <div class="stat-bar-row">
+                  <span>{{ s.class_label }}</span>
+                  <div class="mini-bar"><div [style.width.%]="(s.count / inventoryMaxStat()) * 100"></div></div>
+                  <b>{{ s.count }}</b>
+                </div>
+              }
+            </div>
+          } @else {
+            <p style="font-size:12px;color:var(--text-400);margin:10px 0 0;">该版本尚无实例，可进入下一步抽取。</p>
+          }
+          @if (inv.recent_tasks.length) {
+            <div style="margin-top:12px;font-size:12px;color:var(--text-400);">
+              最近任务：
+              @for (t of inv.recent_tasks.slice(0,3); track t.id) {
+                <span style="margin-right:10px;">{{ t.status }} · {{ t.created_at | date:'MM-dd HH:mm' }}</span>
+              }
+            </div>
+          }
+        </div>
+      }
+
+      <div style="margin-top:16px;"><button class="btn btn-primary" type="button" [disabled]="!store.schemaId()" (click)="store.step.set(2)">下一步</button></div>
+    }
+
+    @if (store.step() === 2 && store.mode() === 'unstruct') {
+      <div class="file-pick-list">
+        @for (f of store.files(); track f.id) {
+          <label class="file-pick">
+            <input type="checkbox" [checked]="store.selectedFileIds().has(f.id)" (change)="store.toggleFile(f.id)" />
+            {{ f.name }} <ui-badge variant="b-success">ready</ui-badge>
+          </label>
+        } @empty { <ui-empty-state title="无可用文档" desc="请先在非结构化管理中上传并解析文档" /> }
+      </div>
+      <label style="display:block;margin-top:14px;max-width:420px;">
+        抽取模型
+        <select class="form-ctl" style="width:100%;margin-top:6px;"
+          [ngModel]="store.selectedModelId()"
+          (ngModelChange)="store.selectedModelId.set($event)">
+          <option [ngValue]="null" disabled>请选择模型</option>
+          @for (m of store.models(); track m.id) {
+            <option [ngValue]="m.id">{{ m.name }}{{ m.is_default ? '（默认）' : '' }} · {{ m.model_name }}</option>
+          }
+        </select>
+      </label>
+      @if (store.models().length === 0) {
+        <p style="font-size:12px;color:var(--text-400);margin-top:8px;">
+          暂无可用模型，请先前往
+          <a routerLink="/models" style="color:var(--accent);">模型管理</a>
+          配置（可从「OpenLab Qwen3 35B」模板导入）
+        </p>
+      }
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;">
+        <input type="checkbox"
+          [ngModel]="store.replaceExisting()"
+          (ngModelChange)="store.replaceExisting.set($event)" />
+        覆盖本 Schema 当前版本已有的非结构化实例（推荐，避免重复堆积）
+      </label>
+      <div style="margin-top:16px;display:flex;gap:8px;">
+        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">上一步</button>
+        <button class="btn btn-primary" type="button"
+          [disabled]="!store.selectedFileIds().size || !store.selectedModelId()"
+          (click)="store.startUnstructured()">启动 AI 抽取</button>
+      </div>
+    }
+
+    @if (store.step() === 2 && store.mode() === 'struct') {
+      <div class="form-grid">
+        <label>数据源
+          <select (ngModelChange)="store.loadTables($event)" [ngModel]="''">
+            <option value="">选择连接</option>
+            @for (d of store.dbSources(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
+          </select>
+        </label>
+        <label>表
+          <select [(ngModel)]="mapSourceId">
+            <option value="">选择表</option>
+            @for (t of store.tables(); track t.id) { <option [value]="t.id">{{ t.table_schema }}.{{ t.table_name }}</option> }
+          </select>
+        </label>
+        <label>目标类
+          <select [(ngModel)]="mapClassId">
+            <option value="">选择类</option>
+            @for (c of store.classes(); track c.id) { <option [value]="c.id">{{ c.label }}</option> }
+          </select>
+        </label>
+      </div>
+      <button class="btn btn-secondary" type="button" style="margin-top:10px;" (click)="openMapping()">配置字段映射</button>
+
+      <div style="margin-top:16px;">
+        <h3 style="font-size:14px;margin-bottom:8px;">已保存映射</h3>
+        @for (m of store.mappings(); track m.id) {
+          <label class="file-pick">
+            <input type="checkbox" [checked]="store.selectedMappingIds().has(m.id)" (change)="store.toggleMapping(m.id)" />
+            mapping {{ m.id.slice(0,8) }} · class {{ m.class_id.slice(0,8) }}
+          </label>
+        }
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px;">
+        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">上一步</button>
+        <button class="btn btn-primary" type="button" [disabled]="!store.selectedMappingIds().size" (click)="store.startStructured()">开始抽取</button>
+      </div>
+    }
+
+    @if (store.step() === 3) {
+      <ui-progress-bar [progress]="store.task()?.progress || 0" [label]="store.task()?.status || 'running'" />
+    }
+
+    @if (store.step() === 4) {
+      <p style="font-size:12px;color:var(--text-400);margin:0 0 10px;">
+        @if (store.task(); as t) {
+          本次抽取结果
+          @if (t.output_summary?.['schema_version']; as sv) { · Schema v{{ sv }} }
+        } @else {
+          实例库浏览 · Schema v{{ store.inventoryVersion() ?? '—' }}
+        }
+      </p>
+      @if (store.stats().length) {
+        <div class="stats-bars">
+          @for (s of store.stats(); track s.class_id) {
+            <div class="stat-bar-row"
+              [class.active]="store.previewClassId() === s.class_id"
+              style="cursor:pointer;"
+              title="点击按该类筛选"
+              (click)="store.togglePreviewClassFilter(s.class_id)">
+              <span>{{ s.class_label }}</span>
+              <div class="mini-bar"><div [style.width.%]="(s.count / maxStat()) * 100"></div></div>
+              <b>{{ s.count }}</b>
+            </div>
+          }
+        </div>
+      }
+      <div class="table-wrap" style="margin-top:14px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>实例</th>
+              <th class="th-filter">
+                <select class="th-filter-select"
+                  [ngModel]="store.previewClassId()"
+                  (ngModelChange)="store.setPreviewClassFilter($event)"
+                  title="按类筛选">
+                  <option [ngValue]="null">类</option>
+                  @for (c of store.previewClassOptions(); track c.id) {
+                    <option [ngValue]="c.id">{{ c.label }}</option>
+                  }
+                </select>
+              </th>
+              <th>版本</th>
+              <th>来源</th>
+              <th>置信度</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (i of store.filteredInstances(); track i.id) {
+              <tr>
+                <td>{{ i.label }}</td>
+                <td>{{ i.class_label || i.class_id.slice(0,8) }}</td>
+                <td>v{{ i.schema_version ?? '—' }}</td>
+                <td><ui-badge variant="b-inst">{{ i.source_type }}</ui-badge></td>
+                <td>{{ i.confidence ?? '—' }}</td>
+                <td><button class="btn btn-ghost btn-sm" type="button" (click)="showDetail(i.id)">详情</button></td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" style="text-align:center;color:var(--text-400);padding:24px;">当前筛选下暂无实例</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">返回 Schema / 实例库</button>
+      </div>
+    }
+  </div>
+</section>
+
+<ui-modal [open]="mappingOpen()" title="字段映射" (closed)="mappingOpen.set(false)" width="900px">
+  <div class="mapping-panes">
+    <div class="map-pane">
+      <h4>源字段</h4>
+      @for (f of store.sourceFields(); track f.column_name) {
+        <div class="map-item" draggable="true" (dragstart)="onDragStart(f.column_name)">{{ f.column_name }} <small>{{ f.data_type }}</small></div>
+      }
+    </div>
+    <div class="map-pane map-links">
+      <h4>映射</h4>
+      <svg class="map-svg" viewBox="0 0 120 280">
+        @for (l of store.links(); track l.source + l.target; let i = $index) {
+          <line [attr.x1]="10" [attr.y1]="20 + i*28" [attr.x2]="110" [attr.y2]="20 + i*28" stroke="var(--accent)" stroke-width="2" />
+          <text x="60" [attr.y]="16 + i*28" text-anchor="middle" font-size="9" fill="var(--text-500)">{{ l.source }} → {{ l.targetKind }}</text>
+        }
+      </svg>
+      @for (l of store.links(); track l.source + l.target) {
+        <div class="map-link-row">{{ l.source }} → {{ l.targetKind === 'instance_uri' ? '实例 URI' : l.target }}</div>
+      }
+    </div>
+    <div class="map-pane">
+      <h4>目标属性</h4>
+      @for (t of store.targetProps(); track t.id || t.label) {
+        <div class="map-item" (dragover)="$event.preventDefault()" (drop)="onDropTarget(t)">
+          {{ t.label }} <ui-badge [variant]="t.kind==='instance_uri' ? 'b-warning' : 'b-prop'">{{ t.kind }}</ui-badge>
+        </div>
+      }
+    </div>
+  </div>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="mappingOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" (click)="confirmMapping()">保存映射</button>
+  </div>
+</ui-modal>
+
+<ui-modal [open]="detailOpen()" title="实例详情" (closed)="detailOpen.set(false)" width="560px">
+  @if (store.instanceDetail(); as d) {
+    <div class="node-detail-row"><span class="k">标签</span><span class="v">{{ d.label }}</span></div>
+    <div class="node-detail-row"><span class="k">类</span><span class="v">{{ d.class_label || d.class_id }}</span></div>
+    <div class="node-detail-row"><span class="k">来源</span><span class="v">{{ d.source_type }}</span></div>
+    <h4 style="margin:14px 0 8px;font-size:13px;">数据属性</h4>
+    @for (v of d.data_values; track v.property_id + v.value) {
+      <div class="node-detail-row"><span class="k">{{ v.property_label }}</span><span class="v">{{ v.value }}</span></div>
+    }
+    <h4 style="margin:14px 0 8px;font-size:13px;">关系</h4>
+    @for (r of d.relations; track r.property_id + r.object_instance_id) {
+      <div class="node-detail-row"><span class="k">{{ r.property_label }}</span><span class="v">{{ r.object_label }}</span></div>
+    }
+  }
+</ui-modal>

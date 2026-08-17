@@ -1,0 +1,5 @@
+.graph-split { display:grid; grid-template-columns:1fr 300px; gap:14px; margin-top:14px; min-height:520px; }
+.graph-canvas { position:relative; min-height:520px; padding:0; overflow:hidden; }
+.graph-canvas app-d3-force-graph { position:absolute; inset:0; }
+.node-detail-panel { padding:14px; }
+@media (max-width: 1100px) { .graph-split { grid-template-columns:1fr; } }
