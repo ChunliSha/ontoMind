@@ -2,20 +2,29 @@
   <div class="view-head">
     <p class="eyebrow">Module 03 · AI 辅助抽取</p>
     <h1>本体抽取</h1>
-    <p class="lead">从非结构化文档或结构化映射中抽取符合 Schema 的实例数据。</p>
+    <p class="lead">从非结构化文档或结构化映射中抽取符合 Schema 的实例数据。点击上方步骤可随时单独查看。</p>
   </div>
 
   <ui-seg-group
     [options]="[{id:'unstruct',label:'非结构化抽取'},{id:'struct',label:'结构化抽取'}]"
     [value]="store.mode()"
-    (valueChange)="store.mode.set($any($event)); store.step.set(1)" />
+    (valueChange)="store.mode.set($any($event)); store.goToStep(1)" />
 
   <div class="step-grid" style="margin-top:16px;">
     @for (n of [1,2,3,4]; track n) {
-      <div class="step-card" [class.active]="store.step()===n" [class.done]="store.step()>n">
+      <button
+        type="button"
+        class="step-card"
+        [class.active]="store.step()===n"
+        [class.done]="store.maxReachedStep()>n && store.step()!==n"
+        [class.locked]="!store.canViewStep(n)"
+        [disabled]="!store.canViewStep(n)"
+        [attr.aria-current]="store.step()===n ? 'step' : null"
+        [title]="store.canViewStep(n) ? '查看：' + store.stepLabels[n-1] : '请先选择 Schema'"
+        (click)="store.goToStep(n)">
         <div class="step-num">{{ n }}</div>
-        <div class="step-label">{{ ['选择 Schema','选择数据','执行抽取','结果预览'][n-1] }}</div>
-      </div>
+        <div class="step-label">{{ store.stepLabels[n-1] }}</div>
+      </button>
     }
   </div>
 
@@ -47,6 +56,8 @@
               </div>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" type="button" [disabled]="!store.schemaId()"
+                (click)="store.exportTtl(true)" title="导出当前版本 Schema + 实例为 TTL">导出 TTL</button>
               <button class="btn btn-ghost btn-sm" type="button" (click)="store.browseInventory()" [disabled]="!inv.total">浏览实例</button>
               <button class="btn btn-ghost btn-sm" type="button" [disabled]="!inv.total" (click)="confirmClear()">清空本版本</button>
             </div>
@@ -75,7 +86,12 @@
         </div>
       }
 
-      <div style="margin-top:16px;"><button class="btn btn-primary" type="button" [disabled]="!store.schemaId()" (click)="store.step.set(2)">下一步</button></div>
+      <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" type="button" [disabled]="!store.schemaId()" (click)="store.goToStep(2)">下一步</button>
+        @if (!store.inventory() && store.schemaId()) {
+          <button class="btn btn-secondary" type="button" (click)="store.exportTtl(true)">导出 TTL</button>
+        }
+      </div>
     }
 
     @if (store.step() === 2 && store.mode() === 'unstruct') {
@@ -112,7 +128,7 @@
         覆盖本 Schema 当前版本已有的非结构化实例（推荐，避免重复堆积）
       </label>
       <div style="margin-top:16px;display:flex;gap:8px;">
-        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">上一步</button>
+        <button class="btn btn-ghost" type="button" (click)="store.goToStep(1)">上一步</button>
         <button class="btn btn-primary" type="button"
           [disabled]="!store.selectedFileIds().size || !store.selectedModelId()"
           (click)="store.startUnstructured()">启动 AI 抽取</button>
@@ -152,13 +168,35 @@
         }
       </div>
       <div style="margin-top:16px;display:flex;gap:8px;">
-        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">上一步</button>
+        <button class="btn btn-ghost" type="button" (click)="store.goToStep(1)">上一步</button>
         <button class="btn btn-primary" type="button" [disabled]="!store.selectedMappingIds().size" (click)="store.startStructured()">开始抽取</button>
       </div>
     }
 
     @if (store.step() === 3) {
-      <ui-progress-bar [progress]="store.task()?.progress || 0" [label]="store.task()?.status || 'running'" />
+      @if (store.task(); as t) {
+        <ui-progress-bar [progress]="t.progress || 0" [label]="t.status || 'running'" />
+        <div style="margin-top:12px;font-size:13px;color:var(--text-500);">
+          任务 {{ t.id.slice(0, 8) }} · {{ t.task_type }}
+          @if (t.error_message) {
+            <div style="color:var(--danger, #b91c1c);margin-top:8px;">{{ t.error_message }}</div>
+          }
+        </div>
+        @if (t.status === 'succeeded' || t.status === 'failed') {
+          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost" type="button" (click)="store.goToStep(2)">返回选择数据</button>
+            @if (t.status === 'succeeded') {
+              <button class="btn btn-primary" type="button" (click)="store.goToStep(4)">查看结果预览</button>
+            }
+          </div>
+        }
+      } @else {
+        <ui-empty-state title="尚未启动抽取" desc="可先在步骤 2 选择文档/映射并启动；或点击上方步骤条随时返回查看其它步骤。" />
+        <div style="margin-top:14px;display:flex;gap:8px;">
+          <button class="btn btn-ghost" type="button" (click)="store.goToStep(1)">查看 Schema</button>
+          <button class="btn btn-primary" type="button" (click)="store.goToStep(2)">去选择数据</button>
+        </div>
+      }
     }
 
     @if (store.step() === 4) {
@@ -223,8 +261,10 @@
           </tbody>
         </table>
       </div>
-      <div style="margin-top:14px;">
-        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">返回 Schema / 实例库</button>
+      <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" type="button" [disabled]="!store.schemaId()"
+          (click)="store.exportTtl(true)">导出 Schema + 实例 TTL</button>
+        <button class="btn btn-ghost" type="button" (click)="store.goToStep(1)">返回 Schema / 实例库</button>
       </div>
     }
   </div>

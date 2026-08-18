@@ -153,7 +153,7 @@ class LlmModelService:
     async def create(self, session: AsyncSession, body: LlmModelCreate) -> LlmModelRead:
         if await self.repo.get_by_name(session, body.name):
             raise AppError(ErrorCode.LLM_002, field="name")
-        if body.provider != "mock" and not (body.api_base or "").strip():
+        if not (body.api_base or "").strip():
             raise AppError(ErrorCode.VALIDATION_ERROR, message="请填写 API Base URL", field="api_base")
         if body.is_default:
             await self.repo.clear_default(session)
@@ -219,14 +219,6 @@ class LlmModelService:
         obj = await self._get(session, id)
         started = time.perf_counter()
         try:
-            if obj.provider == "mock":
-                latency = int((time.perf_counter() - started) * 1000)
-                obj.status = "active"
-                obj.last_error = None
-                obj.last_tested_at = datetime.now(timezone.utc)
-                await self.repo.update(session, obj)
-                return LlmModelTestResult(ok=True, message="Mock 模型可用", latency_ms=latency)
-
             api_base = (obj.api_base or "").rstrip("/")
             if not api_base:
                 raise AppError(ErrorCode.LLM_003, message="未配置 API Base")

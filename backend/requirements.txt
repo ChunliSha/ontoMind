@@ -13,3 +13,6 @@ pytest>=8.3.0
 pytest-asyncio>=0.24.0
 greenlet>=3.1.0
 pypinyin>=0.53.0
+semantica>=0.6.5
+pypdf>=5.0.0
+python-docx>=1.1.0

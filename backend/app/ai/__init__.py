@@ -7,7 +7,6 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.base import LLMProvider
-from app.ai.mock_provider import MockLLMProvider
 from app.ai.openai_compatible_provider import OpenAICompatibleProvider
 from app.core.config import settings
 from app.core.exceptions import AppError, ErrorCode
@@ -17,9 +16,12 @@ from app.repositories.llm_model_repository import LlmModelRepository
 
 def get_llm_provider() -> LLMProvider:
     """Fallback from .env when no model_id is provided."""
-    if settings.LLM_PROVIDER == "openai_compatible":
-        return OpenAICompatibleProvider()
-    return MockLLMProvider()
+    if not (settings.LLM_API_BASE or "").strip():
+        raise AppError(
+            ErrorCode.LLM_003,
+            message="未配置 LLM，请在「模型管理」中添加 OpenAI 兼容模型，或在 .env 设置 LLM_API_BASE",
+        )
+    return OpenAICompatibleProvider()
 
 
 async def resolve_llm_provider(
@@ -42,8 +44,11 @@ async def resolve_llm_provider(
     if cfg is None:
         return get_llm_provider()
 
-    if cfg.provider == "mock":
-        return MockLLMProvider()
+    if (cfg.provider or "").lower() == "mock":
+        raise AppError(
+            ErrorCode.LLM_003,
+            message="已移除 Mock 模型，请改用 OpenAI 兼容模型",
+        )
 
     api_key = decrypt_password(cfg.api_key_enc) if cfg.api_key_enc else None
     return OpenAICompatibleProvider(

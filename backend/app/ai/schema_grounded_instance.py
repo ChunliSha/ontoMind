@@ -1,9 +1,10 @@
-"""Schema-grounded unstructured instance extraction.
+"""Schema-grounded unstructured instance extraction (legacy / fallback).
 
-Pipeline (aligned with extract/populate_ontology.py ideas, no import from extract/):
+Product instance extraction now uses semantica via
+`app.ai.populate_ontology_pipeline` (adapted from extract/populate_ontology.py).
 
-    NER → (entity_types 加权重打分) → Relation → Triplet → alias normalize
-    → data-value grounding → ExtractedInstance
+This module remains for unit tests of the previous weighted-confidence helpers
+and as a non-semantica reference implementation.
 """
 
 from __future__ import annotations

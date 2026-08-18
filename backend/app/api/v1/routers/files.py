@@ -53,6 +53,11 @@ async def get_file(id: str, session: AsyncSession = Depends(get_session)):
     return await svc.get(session, id)
 
 
+@router.post("/{id}/reparse", response_model=FileRead)
+async def reparse_file(id: str, session: AsyncSession = Depends(get_session)):
+    return await svc.reparse(session, id)
+
+
 @router.get("/{id}/preview", response_model=FilePreview)
 async def preview_file(id: str, session: AsyncSession = Depends(get_session)):
     return await svc.preview(session, id)

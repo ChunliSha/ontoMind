@@ -134,7 +134,6 @@ export class LlmModelsPage implements OnInit {
       vllm: 'vLLM',
       local_openai: '本地 OpenAI 兼容',
       custom: '自定义',
-      mock: 'Mock',
     };
     return map[p] || p;
   }

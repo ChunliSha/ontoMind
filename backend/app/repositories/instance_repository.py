@@ -49,13 +49,23 @@ class InstanceRepository:
         return list(result.scalars().all()), total
 
     async def list_by_schema(
-        self, session: AsyncSession, schema_id: uuid.UUID, *, limit: int | None = None
+        self,
+        session: AsyncSession,
+        schema_id: uuid.UUID,
+        *,
+        schema_version: int | None = None,
+        limit: int | None = None,
+        with_details: bool = False,
     ) -> list[OntologyInstance]:
-        stmt = (
-            select(OntologyInstance)
-            .where(OntologyInstance.schema_id == schema_id)
-            .order_by(OntologyInstance.created_at)
-        )
+        stmt = select(OntologyInstance).where(OntologyInstance.schema_id == schema_id)
+        if schema_version is not None:
+            stmt = stmt.where(OntologyInstance.schema_version == schema_version)
+        if with_details:
+            stmt = stmt.options(
+                selectinload(OntologyInstance.data_values),
+                selectinload(OntologyInstance.subject_relations),
+            )
+        stmt = stmt.order_by(OntologyInstance.created_at)
         if limit:
             stmt = stmt.limit(limit)
         return list((await session.execute(stmt)).scalars().all())

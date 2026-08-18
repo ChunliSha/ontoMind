@@ -8,7 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, ErrorCode
 from app.models.schema import OntologyClass, OntologyProperty, OntologySchema
-from app.rdf.ttl_builder import ClassSpec, PropertySpec, build_ttl, label_to_local_name
+from app.rdf.ttl_builder import (
+    ClassSpec,
+    InstanceDataValueSpec,
+    InstanceRelationSpec,
+    InstanceSpec,
+    PropertySpec,
+    build_ttl,
+    label_to_local_name,
+)
 from app.rdf.ttl_parser import extract_entities, parse_ttl
 from app.repositories.class_repository import ClassRepository
 from app.repositories.instance_repository import InstanceRepository
@@ -239,7 +247,14 @@ class SchemaService:
         await self.prop_repo.delete(session, obj)
         await self.schema_repo.invalidate_graph_cache(session, schema_id)
 
-    async def export_ttl(self, session: AsyncSession, schema_id: str) -> str:
+    async def export_ttl(
+        self,
+        session: AsyncSession,
+        schema_id: str,
+        *,
+        include_instances: bool = False,
+        schema_version: int | None = None,
+    ) -> str:
         schema = await self._get_schema(session, schema_id)
         classes = await self.class_repo.list_by_schema(session, schema.id)
         props = await self.prop_repo.list_by_schema(session, schema.id)
@@ -253,6 +268,10 @@ class SchemaService:
             )
             for c in classes
         ]
+        prop_id_to_ln = {
+            p.id: (p.local_name or label_to_local_name(p.label)) for p in props
+        }
+        prop_id_to_dt = {p.id: p.datatype for p in props}
         prop_specs = [
             PropertySpec(
                 label=p.label,
@@ -264,7 +283,53 @@ class SchemaService:
             )
             for p in props
         ]
-        return build_ttl(base_iri=schema.base_iri, classes=class_specs, properties=prop_specs)
+
+        instance_specs: list[InstanceSpec] | None = None
+        if include_instances:
+            version = schema_version if schema_version is not None else schema.version
+            rows = await self.instance_repo.list_by_schema(
+                session, schema.id, schema_version=version, with_details=True
+            )
+            # Only keep ABox links whose object is also in this export set
+            exported_ids = {str(r.id) for r in rows}
+            instance_specs = []
+            for r in rows:
+                class_ln = id_to_ln.get(r.class_id, "Unknown")
+                data_values = [
+                    InstanceDataValueSpec(
+                        property_local_name=prop_id_to_ln[dv.property_id],
+                        value=dv.value,
+                        datatype=prop_id_to_dt.get(dv.property_id),
+                    )
+                    for dv in (r.data_values or [])
+                    if dv.property_id in prop_id_to_ln
+                ]
+                relations = [
+                    InstanceRelationSpec(
+                        property_local_name=prop_id_to_ln.get(rel.property_id, str(rel.property_id)),
+                        object_key=str(rel.object_instance_id),
+                    )
+                    for rel in (r.subject_relations or [])
+                    if rel.property_id in prop_id_to_ln
+                    and str(rel.object_instance_id) in exported_ids
+                ]
+                instance_specs.append(
+                    InstanceSpec(
+                        key=str(r.id),
+                        class_local_name=class_ln,
+                        label=r.label,
+                        local_name=r.local_name,
+                        data_values=data_values or None,
+                        relations=relations or None,
+                    )
+                )
+
+        return build_ttl(
+            base_iri=schema.base_iri,
+            classes=class_specs,
+            properties=prop_specs,
+            instances=instance_specs,
+        )
 
     async def import_ttl(self, session: AsyncSession, ttl_text: str, name: str | None = None) -> SchemaRead:
         graph = parse_ttl(ttl_text)

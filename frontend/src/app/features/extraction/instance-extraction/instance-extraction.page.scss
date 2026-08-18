@@ -1,7 +1,25 @@
 .step-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-.step-card { background:var(--card); border:1px solid var(--border); border-radius:var(--r-md); padding:12px; display:flex; gap:10px; align-items:center; }
+.step-card {
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r-md);
+  padding:12px;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  width:100%;
+  text-align:left;
+  cursor:pointer;
+  font:inherit;
+  color:inherit;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+.step-card:hover:not(:disabled) { border-color:var(--accent); background:var(--surface, rgba(0,0,0,.02)); }
+.step-card:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .step-card.active { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
-.step-num { width:28px; height:28px; border-radius:50%; background:var(--neutral-soft); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
+.step-card.done .step-num { background:var(--success, #16a34a); color:#fff; }
+.step-card.locked { opacity:.55; cursor:not-allowed; }
+.step-num { width:28px; height:28px; border-radius:50%; background:var(--neutral-soft); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0; }
 .step-card.active .step-num { background:var(--accent); color:#fff; }
 .step-label { font-size:13px; color:var(--text-700); }
 .file-pick-list { display:flex; flex-direction:column; gap:8px; max-height:280px; overflow:auto; }

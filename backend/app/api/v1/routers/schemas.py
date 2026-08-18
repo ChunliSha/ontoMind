@@ -139,8 +139,18 @@ async def induce_schema(
 
 
 @router.get("/schemas/{id}/export-ttl")
-async def export_ttl(id: str, session: AsyncSession = Depends(get_session)):
-    ttl = await svc.export_ttl(session, id)
+async def export_ttl(
+    id: str,
+    include_instances: bool = Query(False),
+    schema_version: int | None = Query(None),
+    session: AsyncSession = Depends(get_session),
+):
+    ttl = await svc.export_ttl(
+        session,
+        id,
+        include_instances=include_instances,
+        schema_version=schema_version,
+    )
     return Response(content=ttl, media_type="text/turtle")
 
 

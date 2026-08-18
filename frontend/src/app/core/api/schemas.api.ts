@@ -81,8 +81,14 @@ export class SchemasApi {
     return this.api.post<TaskCreated>(`/schemas/${schemaId}/induce`, body ?? {});
   }
 
-  exportTtl(schemaId: string): Observable<string> {
-    return this.api.getText(`/schemas/${schemaId}/export-ttl`);
+  exportTtl(
+    schemaId: string,
+    opts?: { include_instances?: boolean; schema_version?: number | null },
+  ): Observable<string> {
+    return this.api.getText(`/schemas/${schemaId}/export-ttl`, {
+      include_instances: opts?.include_instances ?? false,
+      schema_version: opts?.schema_version ?? undefined,
+    });
   }
 
   importTtl(file: File): Observable<SchemaRead> {

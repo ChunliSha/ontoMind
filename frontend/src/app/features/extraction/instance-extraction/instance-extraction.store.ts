@@ -32,6 +32,9 @@ export class InstanceExtractionStore {
 
   readonly mode = signal<'unstruct' | 'struct'>('unstruct');
   readonly step = signal(1);
+  /** Highest step the user has reached in this session (for done styling). */
+  readonly maxReachedStep = signal(1);
+  readonly stepLabels = ['选择 Schema', '选择数据', '执行抽取', '结果预览'] as const;
   readonly schemas = signal<SchemaRead[]>([]);
   readonly schemaId = signal<string>('');
   readonly classes = signal<ClassRead[]>([]);
@@ -114,6 +117,31 @@ export class InstanceExtractionStore {
     return this.schemas().find((s) => s.id === this.schemaId());
   }
 
+  /** Jump to any wizard step for independent viewing (soft guards). */
+  goToStep(n: number): void {
+    if (n < 1 || n > 4) return;
+    if (n === this.step()) return;
+
+    if (n >= 2 && !this.schemaId()) {
+      this.toast.error('请先选择目标 Schema');
+      return;
+    }
+    if (n === 2 && this.mode() === 'unstruct' && this.files().length === 0) {
+      // still allow viewing empty file list
+    }
+    if (n === 4 && !this.instances().length && !this.task()) {
+      // allow empty preview; user may have browsed inventory into step 4 already
+    }
+
+    this.step.set(n);
+    if (n > this.maxReachedStep()) this.maxReachedStep.set(n);
+  }
+
+  canViewStep(n: number): boolean {
+    if (n <= 1) return true;
+    return !!this.schemaId();
+  }
+
   setSchema(id: string): void {
     this.schemaId.set(id);
     const schema = this.schemas().find((s) => s.id === id);
@@ -174,6 +202,32 @@ export class InstanceExtractionStore {
     });
   }
 
+  /** Export Schema TBox + current-version ABox as Turtle. */
+  exportTtl(includeInstances = true): void {
+    const id = this.schemaId();
+    const schema = this.currentSchema();
+    if (!id || !schema) return;
+    const ver =
+      this.inventoryVersion() ??
+      (this.task()?.output_summary?.['schema_version'] as number | undefined) ??
+      schema.version;
+    this.schemasApi
+      .exportTtl(id, { include_instances: includeInstances, schema_version: ver })
+      .subscribe({
+        next: (ttl) => {
+          const blob = new Blob([ttl], { type: 'text/turtle' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          const suffix = includeInstances ? `_v${ver}_populated` : `_v${ver}`;
+          a.download = `${schema.name}${suffix}.ttl`;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          this.toast.success(includeInstances ? 'Schema + 实例 TTL 已导出' : 'Schema TTL 已导出');
+        },
+        error: () => this.toast.error('TTL 导出失败'),
+      });
+  }
+
   browseInventory(): void {
     const id = this.schemaId();
     if (!id) return;
@@ -195,7 +249,7 @@ export class InstanceExtractionStore {
         this.inventoryInstances.set(r.items ?? []);
         this.inventoryTotal.set(r.total ?? 0);
         this.instances.set(r.items ?? []);
-        this.step.set(4);
+        this.goToStep(4);
       },
       error: () => this.toast.error('加载实例库失败'),
     });
@@ -282,7 +336,7 @@ export class InstanceExtractionStore {
   }
 
   private poll(taskId: string): void {
-    this.step.set(3);
+    this.goToStep(3);
     timer(0, 400).pipe(
       switchMap(() => this.extraction.getTask(taskId)),
       takeWhile((t) => t.status === 'pending' || t.status === 'running', true),
@@ -290,7 +344,7 @@ export class InstanceExtractionStore {
       next: (t) => {
         this.task.set(t);
         if (t.status === 'succeeded') {
-          this.step.set(4);
+          this.goToStep(4);
           const summary = t.output_summary as { succeeded?: number; failed?: number; schema_version?: number } | null;
           const ok = summary?.succeeded ?? 0;
           const fail = summary?.failed ?? 0;

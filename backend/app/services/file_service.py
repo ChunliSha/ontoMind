@@ -37,6 +37,74 @@ ALLOWED_TYPES = {
 }
 MAX_BYTES = 200 * 1024 * 1024
 
+# Legacy Phase-1 fixture markers — must never be used as document text.
+_PLACEHOLDER_POLLUTION_MARKERS = (
+    "[占位解析文本]",
+    "设备编号 GY-01 属于一号产线",
+    "一号产线由华能电气供应主变压器",
+    "华能电气供应主变压器",
+)
+
+
+def is_placeholder_polluted(text: str | None) -> bool:
+    """True if text still contains the old hardcoded demo parse output."""
+    if not text:
+        return False
+    return any(m in text for m in _PLACEHOLDER_POLLUTION_MARKERS)
+
+
+def _decode_text_bytes(raw: bytes) -> str:
+    for enc in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def extract_text_from_bytes(*, name: str, file_type: str, raw: bytes) -> str:
+    """Extract plain text from uploaded bytes. Never injects demo/fixture content."""
+    ext = (file_type or Path(name).suffix.lstrip(".")).lower()
+
+    if ext in {"txt", "md", "markdown", "csv", "html", "htm"}:
+        return _decode_text_bytes(raw).strip()
+
+    if ext == "pdf":
+        try:
+            from io import BytesIO
+
+            from pypdf import PdfReader
+
+            reader = PdfReader(BytesIO(raw))
+            parts = [(p.extract_text() or "") for p in reader.pages]
+            text = "\n".join(parts).strip()
+            if text:
+                return text
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("pdf extract failed for %s: %s", name, exc)
+
+    if ext in {"docx"}:
+        try:
+            from io import BytesIO
+
+            import docx  # python-docx
+
+            document = docx.Document(BytesIO(raw))
+            text = "\n".join(p.text for p in document.paragraphs if p.text).strip()
+            if text:
+                return text
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("docx extract failed for %s: %s", name, exc)
+
+    # Best-effort for unknown/binary-ish types: readable text only, no fixtures.
+    text = _decode_text_bytes(raw).strip()
+    if text:
+        return text
+    raise AppError(
+        ErrorCode.FILE_003,
+        message=f"无法从文件解析出文本内容（类型: {ext}）。请上传 txt/md/pdf/docx 等可读文档。",
+    )
+
 
 def _to_read(obj: DataSourceFile) -> FileRead:
     return FileRead(
@@ -137,18 +205,18 @@ class FileService:
             try:
                 storage = get_storage(obj.storage_backend)
                 raw = await storage.read(obj.storage_path)
-                # Phase 1 placeholder — real PDF/DOCX in Phase 8
-                text = (
-                    f"[占位解析文本] 文件: {obj.name}\n"
-                    f"大小: {obj.size_bytes} bytes\n"
-                    f"类型: {obj.file_type}\n\n"
-                    f"## 设备\n设备编号 GY-01 属于一号产线，运行状态正常。\n\n"
-                    f"## 产线\n一号产线由华能电气供应主变压器。\n\n"
-                    f"原始字节预览（前 500）:\n{raw[:500]!r}"
+                text = extract_text_from_bytes(
+                    name=obj.name, file_type=obj.file_type, raw=raw
                 )
+                if not text.strip():
+                    raise AppError(ErrorCode.FILE_003, message="解析结果为空")
                 obj.extracted_text = text
                 obj.status = "ready"
                 obj.error_message = None
+            except AppError as exc:
+                logger.warning("parse rejected for %s: %s", file_id, exc.message)
+                obj.status = "failed"
+                obj.error_message = exc.message
             except Exception as exc:  # noqa: BLE001
                 logger.exception("parse failed for %s", file_id)
                 obj.status = "failed"
@@ -156,9 +224,47 @@ class FileService:
             obj.updated_at = datetime.now(timezone.utc)
             await session.commit()
 
+    async def reparse(self, session: AsyncSession, id: str) -> FileRead:
+        """Re-run text extraction from stored bytes (clears old placeholder text)."""
+        obj = await self._get(session, id)
+        asyncio.create_task(self._parse_file(obj.id))
+        obj.status = "parsing"
+        obj.error_message = None
+        obj.updated_at = datetime.now(timezone.utc)
+        await self.repo.update(session, obj)
+        return _to_read(obj)
+
+    async def ensure_clean_extracted_text(self, session: AsyncSession, obj: DataSourceFile) -> str:
+        """Return real document text; re-extract from storage if legacy placeholder detected."""
+        text = obj.extracted_text or ""
+        if text.strip() and not is_placeholder_polluted(text):
+            return text
+
+        storage = get_storage(obj.storage_backend)
+        raw = await storage.read(obj.storage_path)
+        fresh = extract_text_from_bytes(name=obj.name, file_type=obj.file_type, raw=raw)
+        if not fresh.strip():
+            raise AppError(ErrorCode.FILE_003, message=f"文件「{obj.name}」解析结果为空")
+        if is_placeholder_polluted(fresh):
+            raise AppError(
+                ErrorCode.FILE_003,
+                message=f"文件「{obj.name}」解析结果异常，请重新上传",
+            )
+        obj.extracted_text = fresh
+        obj.status = "ready"
+        obj.error_message = None
+        obj.updated_at = datetime.now(timezone.utc)
+        await self.repo.update(session, obj)
+        await session.flush()
+        logger.info("cleared placeholder extracted_text for file %s (%s)", obj.id, obj.name)
+        return fresh
+
     async def preview(self, session: AsyncSession, id: str) -> FilePreview:
         obj = await self._get(session, id)
-        text = obj.extracted_text or ""
+        try:
+            text = await self.ensure_clean_extracted_text(session, obj)
+        except AppError:
+            text = obj.extracted_text or ""
         truncated = len(text) > 2000
         return FilePreview(
             id=str(obj.id),
@@ -203,10 +309,7 @@ class FileService:
             await self.convert_standard_md(session, id)
             obj = await self._get(session, id)
         base = obj.extracted_text or ""
-        ontology_md = (
-            f"# Ontology Annotated: {obj.name}\n\n"
-            f"<!-- entities: 设备, 产线, 供应商 -->\n\n{base}\n"
-        )
+        ontology_md = f"# Ontology Annotated: {obj.name}\n\n{base}\n"
         key = f"{obj.id}/ontology.md"
         storage = get_storage(obj.storage_backend)
         await storage.save(key, ontology_md.encode("utf-8"), "text/markdown")

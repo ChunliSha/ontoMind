@@ -18,7 +18,6 @@ ProviderLiteral = Literal[
     "vllm",
     "local_openai",
     "custom",
-    "mock",
 ]
 SourceLiteral = Literal["cloud", "local"]
 StatusLiteral = Literal["active", "disabled", "failed"]

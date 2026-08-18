@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from app.ai.schema_grounded_instance import _instance_merge_key, _slug
+from app.ai.populate_ontology_pipeline import _instance_merge_key, slug
 
 
 def test_slug_stable():
-    assert _slug("主变压器") == _slug(" 主变压器 ")
-    assert _slug("1号主变压器") != _slug("主变压器")
+    assert slug("主变压器") == slug(" 主变压器 ")
+    assert slug("1号主变压器") != slug("主变压器")
 
 
 def test_merge_key_dedupes_same_mention():

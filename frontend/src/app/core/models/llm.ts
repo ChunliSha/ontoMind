@@ -9,8 +9,7 @@ export type LlmProvider =
   | 'ollama'
   | 'vllm'
   | 'local_openai'
-  | 'custom'
-  | 'mock';
+  | 'custom';
 export type LlmStatus = 'active' | 'disabled' | 'failed';
 
 export interface LlmModelRead {

@@ -46,6 +46,7 @@ from app.schemas.extraction import (
 )
 from app.schemas.schema import SchemaInduceRequest
 from app.services._utils import parse_uuid, uid
+from app.services.file_service import FileService
 from app.tasks import runner
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class ExtractionService:
         self.class_repo = ClassRepository()
         self.prop_repo = PropertyRepository()
         self.file_repo = FileRepository()
+        self.file_svc = FileService()
         self.instance_repo = InstanceRepository()
         self.relation_repo = InstanceRelationRepository()
         self.mapping_repo = MappingRepository()
@@ -83,6 +85,23 @@ class ExtractionService:
     async def _llm_for_task(self, session: AsyncSession, task: ExtractionTask):
         model_id = (task.input or {}).get("model_id")
         return await resolve_llm_provider(session, model_id)
+
+    async def _load_file_text(self, session: AsyncSession, f) -> str:
+        """Load document text for AI; never use legacy placeholder fixtures."""
+        # Prefer ontology_md only when it itself is not polluted placeholder.
+        if f.ontology_md_path:
+            from app.storage import get_storage
+
+            try:
+                raw = await get_storage(f.storage_backend).read(f.ontology_md_path)
+                md = raw.decode("utf-8", errors="ignore")
+                from app.services.file_service import is_placeholder_polluted
+
+                if md.strip() and not is_placeholder_polluted(md):
+                    return md
+            except Exception:  # noqa: BLE001
+                pass
+        return await self.file_svc.ensure_clean_extracted_text(session, f)
 
     async def induce_schema(
         self, session: AsyncSession, schema_id: str, body: SchemaInduceRequest
@@ -371,16 +390,7 @@ class ExtractionService:
             files = await self.file_repo.list_by_ids(session, file_ids)
             texts = []
             for f in files:
-                if f.ontology_md_path:
-                    from app.storage import get_storage
-
-                    try:
-                        raw = await get_storage(f.storage_backend).read(f.ontology_md_path)
-                        texts.append(raw.decode("utf-8", errors="ignore"))
-                    except Exception:  # noqa: BLE001
-                        texts.append(f.extracted_text or "")
-                else:
-                    texts.append(f.extracted_text or "")
+                texts.append(await self._load_file_text(session, f))
             existing = [c.label for c in await self.class_repo.list_by_schema(session, task.schema_id)]
             llm = await self._llm_for_task(session, task)
             if not any((t or "").strip() for t in texts):
@@ -489,24 +499,14 @@ class ExtractionService:
 
             # Cross-document merge like extract/map_instances: (class, slug(label)) → one instance
             from app.ai.base import ExtractedInstance
-            from app.ai.schema_grounded_instance import _instance_merge_key
+            from app.ai.populate_ontology_pipeline import _instance_merge_key
 
             merged: dict[tuple[str, str], ExtractedInstance] = {}
             file_names: list[str] = []
 
             for i, f in enumerate(files):
                 try:
-                    text_content = ""
-                    if f.ontology_md_path:
-                        from app.storage import get_storage
-
-                        try:
-                            raw = await get_storage(f.storage_backend).read(f.ontology_md_path)
-                            text_content = raw.decode("utf-8", errors="ignore")
-                        except Exception:  # noqa: BLE001
-                            text_content = f.extracted_text or ""
-                    else:
-                        text_content = f.extracted_text or ""
+                    text_content = await self._load_file_text(session, f)
                     if not text_content.strip():
                         fail += 1
                         await runner.update_task_progress(task_id, progress=(i + 1) / total * 100)
@@ -690,7 +690,7 @@ class ExtractionService:
             labels = [i.label for i in instances]
             file_ids = [parse_uuid(x) for x in (task.input or {}).get("file_ids", [])]
             files = await self.file_repo.list_by_ids(session, file_ids)
-            texts = [f.extracted_text or "" for f in files]
+            texts = [await self._load_file_text(session, f) for f in files]
             await runner.update_task_progress(task_id, progress=30)
             llm = await self._llm_for_task(session, task)
             ai = await llm.extract_business_logic(texts, snapshot, labels)

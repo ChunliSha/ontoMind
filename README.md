@@ -7,7 +7,7 @@
 | 前端 | Angular 20（Standalone + Signals）+ D3 + lucide |
 | 后端 | FastAPI + SQLAlchemy 2 async + Alembic |
 | 数据库 | PostgreSQL 15+（远程直连） |
-| AI | `MockLLMProvider`（默认）；可切换 `openai_compatible` |
+| AI | OpenAI 兼容 LLM（`populate_ontology` Semantica 流水线） |
 
 ## 快速启动
 
@@ -20,7 +20,7 @@
 ```
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/dbname
 DB_SECRET_KEY=<Fernet key>
-LLM_PROVIDER=mock
+LLM_PROVIDER=openai_compatible
 LOCAL_STORAGE_ROOT=./data/uploads
 ```
 

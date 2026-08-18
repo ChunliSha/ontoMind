@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -192,15 +193,20 @@ class OpenAICompatibleProvider:
     async def extract_instances(
         self, texts: list[str], schema_snapshot: SchemaSnapshot
     ) -> AIResult[InstanceExtractionResult]:
-        """Schema-grounded pipeline: NER → Relation → Triplet → grounded map."""
+        """Semantica pipeline (adapted from extract/populate_ontology.py)."""
         started = time.perf_counter()
         try:
-            from app.ai.schema_grounded_instance import extract_instances_schema_grounded
+            from app.ai.populate_ontology_pipeline import extract_instances_sync
 
-            async def chat(system: str, user: str, timeout: float = 180.0) -> str:
-                return await self._chat(system, user, timeout=timeout)
-
-            result = await extract_instances_schema_grounded(texts, schema_snapshot, chat)
+            result = await asyncio.to_thread(
+                extract_instances_sync,
+                texts,
+                schema_snapshot,
+                provider="openai",
+                llm_model=self.model,
+                api_key=self.api_key or None,
+                base_url=self.api_base or None,
+            )
             if not result.instances:
                 return AIResult(
                     success=False,
