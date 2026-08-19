@@ -32,7 +32,7 @@ class OntologyInstance(Base):
     )
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     local_name: Mapped[str | None] = mapped_column(String(255))
-    source_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
     source_ref: Mapped[dict | None] = mapped_column(JSONB)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     schema_version: Mapped[int | None] = mapped_column(Integer)

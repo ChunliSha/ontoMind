@@ -8,7 +8,7 @@
   <ui-seg-group
     [options]="[{id:'unstruct',label:'非结构化抽取'},{id:'struct',label:'结构化抽取'}]"
     [value]="store.mode()"
-    (valueChange)="store.mode.set($any($event)); store.goToStep(1)" />
+    (valueChange)="store.setMode($any($event))" />
 
   <div class="step-grid" style="margin-top:16px;">
     @for (n of [1,2,3,4]; track n) {
@@ -58,7 +58,7 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" type="button" [disabled]="!store.schemaId()"
                 (click)="store.exportTtl(true)" title="导出当前版本 Schema + 实例为 TTL">导出 TTL</button>
-              <button class="btn btn-ghost btn-sm" type="button" (click)="store.browseInventory()" [disabled]="!inv.total">浏览实例</button>
+              <button class="btn btn-ghost btn-sm" type="button" (click)="store.showMergedPreview()" [disabled]="!inv.total">合并预览</button>
               <button class="btn btn-ghost btn-sm" type="button" [disabled]="!inv.total" (click)="confirmClear()">清空本版本</button>
             </div>
           </div>
@@ -138,15 +138,17 @@
     @if (store.step() === 2 && store.mode() === 'struct') {
       <div class="form-grid">
         <label>数据源
-          <select (ngModelChange)="store.loadTables($event)" [ngModel]="''">
+          <select [ngModel]="store.selectedDbSourceId()" (ngModelChange)="onDbSourceChange($event)">
             <option value="">选择连接</option>
             @for (d of store.dbSources(); track d.id) { <option [value]="d.id">{{ d.name }}</option> }
           </select>
         </label>
         <label>表
-          <select [(ngModel)]="mapSourceId">
-            <option value="">选择表</option>
-            @for (t of store.tables(); track t.id) { <option [value]="t.id">{{ t.table_schema }}.{{ t.table_name }}</option> }
+          <select [(ngModel)]="mapTableId" [disabled]="!store.selectedDbSourceId() || store.tablesLoading()">
+            <option value="">{{ store.tablesLoading() ? '加载中…' : '选择表' }}</option>
+            @for (t of store.tables(); track t.id) {
+              <option [value]="t.id">{{ t.table_schema }}.{{ t.table_name }}</option>
+            }
           </select>
         </label>
         <label>目标类
@@ -156,15 +158,33 @@
           </select>
         </label>
       </div>
-      <button class="btn btn-secondary" type="button" style="margin-top:10px;" (click)="openMapping()">配置字段映射</button>
+      @if (store.selectedDbSourceId() && !store.tablesLoading() && !store.tables().length) {
+        <p style="font-size:12px;color:var(--text-400);margin-top:8px;">
+          未找到可用表。请先在
+          <a routerLink="/data/structured" style="color:var(--accent);">结构化数据管理</a>
+          中测试连接并查看表，或确认库中存在可访问的表。
+        </p>
+      }
+      <button class="btn btn-secondary" type="button" style="margin-top:10px;"
+        [disabled]="!mapTableId || !mapClassId"
+        (click)="openMapping()">配置字段映射</button>
 
       <div style="margin-top:16px;">
         <h3 style="font-size:14px;margin-bottom:8px;">已保存映射</h3>
         @for (m of store.mappings(); track m.id) {
-          <label class="file-pick">
-            <input type="checkbox" [checked]="store.selectedMappingIds().has(m.id)" (change)="store.toggleMapping(m.id)" />
-            mapping {{ m.id.slice(0,8) }} · class {{ m.class_id.slice(0,8) }}
-          </label>
+          <div class="file-pick" style="justify-content:space-between;">
+            <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;margin:0;">
+              <input type="checkbox" [checked]="store.selectedMappingIds().has(m.id)" (change)="store.toggleMapping(m.id)" />
+              <span>
+                {{ mappingLabel(m) }}
+                <small style="color:var(--text-400);margin-left:6px;">{{ m.id.slice(0,8) }}</small>
+              </span>
+            </label>
+            <button class="btn btn-ghost btn-sm" type="button" title="删除映射"
+              (click)="confirmDeleteMapping(m.id, $event)">删除</button>
+          </div>
+        } @empty {
+          <p style="font-size:12px;color:var(--text-400);margin:0;">暂无已保存映射，请先配置字段映射。</p>
         }
       </div>
       <div style="margin-top:16px;display:flex;gap:8px;">
@@ -201,13 +221,32 @@
 
     @if (store.step() === 4) {
       <p style="font-size:12px;color:var(--text-400);margin:0 0 10px;">
-        @if (store.task(); as t) {
-          本次抽取结果
+        {{ store.previewTitle() }}
+        @if (store.previewTask(); as t) {
+          · 任务 {{ t.id.slice(0, 8) }}
           @if (t.output_summary?.['schema_version']; as sv) { · Schema v{{ sv }} }
+        } @else if (store.previewView() === 'merged') {
+          · Schema v{{ store.inventoryVersion() ?? '—' }} · 共 {{ store.instances().length }} 条
         } @else {
-          实例库浏览 · Schema v{{ store.inventoryVersion() ?? '—' }}
+          · Schema v{{ store.inventoryVersion() ?? '—' }}
         }
       </p>
+      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-sm"
+          [class.btn-primary]="store.previewView() === store.mode()"
+          [class.btn-ghost]="store.previewView() !== store.mode()"
+          type="button"
+          (click)="store.showModePreview(store.mode())">
+          本模块结果
+        </button>
+        <button class="btn btn-sm"
+          [class.btn-primary]="store.previewView() === 'merged'"
+          [class.btn-ghost]="store.previewView() !== 'merged'"
+          type="button"
+          (click)="store.showMergedPreview()">
+          合并预览
+        </button>
+      </div>
       @if (store.stats().length) {
         <div class="stats-bars">
           @for (s of store.stats(); track s.class_id) {
@@ -251,7 +290,7 @@
                 <td>{{ i.label }}</td>
                 <td>{{ i.class_label || i.class_id.slice(0,8) }}</td>
                 <td>v{{ i.schema_version ?? '—' }}</td>
-                <td><ui-badge variant="b-inst">{{ i.source_type }}</ui-badge></td>
+                <td><ui-badge variant="b-inst">{{ sourceTypeLabel(i.source_type) }}</ui-badge></td>
                 <td>{{ i.confidence ?? '—' }}</td>
                 <td><button class="btn btn-ghost btn-sm" type="button" (click)="showDetail(i.id)">详情</button></td>
               </tr>

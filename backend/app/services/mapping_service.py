@@ -23,10 +23,21 @@ from app.services._utils import parse_uuid, uid
 
 # rough type compatibility for MAPPING_002
 _COMPAT = {
-    "xsd:string": {"varchar", "text", "character varying", "string", "char", "nvarchar"},
+    "xsd:string": {
+        "varchar",
+        "text",
+        "character varying",
+        "character",
+        "string",
+        "char",
+        "nvarchar",
+        "uuid",
+        "date",  # allow date→string mapping when ontology lacks xsd:date
+    },
     "xsd:int": {"int", "integer", "bigint", "smallint", "serial"},
     "xsd:decimal": {"numeric", "decimal", "float", "double", "real"},
     "xsd:boolean": {"bool", "boolean"},
+    "xsd:date": {"date", "timestamp", "timestamptz", "datetime"},
     "xsd:dateTime": {"timestamp", "timestamptz", "datetime", "date"},
     "xsd:json": {"json", "jsonb", "text"},
 }
@@ -59,7 +70,19 @@ class MappingService:
         cls = await self.class_repo.get_by_id(session, parse_uuid(class_id))
         if not cls:
             raise AppError(ErrorCode.NOT_FOUND, message="类不存在")
-        props = await self.prop_repo.list_by_class(session, cls.id)
+        # Include inherited properties from parent classes (child overrides same label).
+        by_label: dict[str, object] = {}
+        order: list[str] = []
+        cur = cls
+        while cur is not None:
+            for p in await self.prop_repo.list_by_class(session, cur.id):
+                if p.label not in by_label:
+                    by_label[p.label] = p
+                    order.append(p.label)
+            if not cur.parent_class_id:
+                break
+            cur = await self.class_repo.get_by_id(session, cur.parent_class_id)
+
         items: list[TargetPropertyRead] = [
             TargetPropertyRead(
                 id=None,
@@ -69,13 +92,14 @@ class MappingService:
                 target_kind="instance_uri",
             )
         ]
-        for p in props:
+        for label in order:
+            p = by_label[label]
             items.append(
                 TargetPropertyRead(
-                    id=str(p.id),
-                    label=p.label,
-                    kind=p.kind,  # type: ignore[arg-type]
-                    datatype=p.datatype,
+                    id=str(p.id),  # type: ignore[attr-defined]
+                    label=p.label,  # type: ignore[attr-defined]
+                    kind=p.kind,  # type: ignore[arg-type,attr-defined]
+                    datatype=p.datatype,  # type: ignore[attr-defined]
                     target_kind="property",
                 )
             )
@@ -152,6 +176,12 @@ class MappingService:
         mapping = await self.repo.get_by_id(session, mapping.id)
         assert mapping is not None
         return self._to_read(mapping)
+
+    async def delete(self, session: AsyncSession, mapping_id: str) -> None:
+        obj = await self.repo.get_by_id(session, parse_uuid(mapping_id))
+        if not obj:
+            raise AppError(ErrorCode.NOT_FOUND, message="映射不存在")
+        await self.repo.delete(session, obj)
 
     @staticmethod
     def _compatible(datatype: str, source_type: str) -> bool:

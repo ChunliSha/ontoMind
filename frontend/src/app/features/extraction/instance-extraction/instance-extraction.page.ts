@@ -8,7 +8,7 @@ import { ProgressBarComponent } from '../../../shared/ui/progress-bar/progress-b
 import { BadgeComponent } from '../../../shared/ui/badge/badge.component';
 import { ModalComponent } from '../../../shared/ui/modal/modal.component';
 import { EmptyStateComponent } from '../../../shared/ui/empty-state/empty-state.component';
-import { TargetProperty } from '../../../core/models/mapping';
+import { TargetProperty, MappingRead } from '../../../core/models/mapping';
 
 @Component({
   selector: 'app-instance-extraction-page',
@@ -23,14 +23,19 @@ export class InstanceExtractionPage implements OnInit {
   readonly mappingOpen = signal(false);
   readonly detailOpen = signal(false);
   readonly dragSource = signal<string | null>(null);
-  mapSourceId = '';
+  mapTableId = '';
   mapClassId = '';
 
   ngOnInit(): void { this.store.bootstrap(); }
 
+  onDbSourceChange(sourceId: string): void {
+    this.mapTableId = '';
+    this.store.loadTables(sourceId);
+  }
+
   openMapping(): void {
-    if (!this.mapSourceId || !this.mapClassId) return;
-    this.store.openMapping(this.mapSourceId, this.mapClassId);
+    if (!this.mapTableId || !this.mapClassId) return;
+    this.store.openMapping(this.mapTableId, this.mapClassId);
     this.mappingOpen.set(true);
   }
 
@@ -67,5 +72,29 @@ export class InstanceExtractionPage implements OnInit {
 
   confirmMapping(): void {
     this.store.saveMapping(() => this.mappingOpen.set(false));
+  }
+
+  mappingLabel(m: MappingRead): string {
+    const cls = this.store.classes().find((c) => c.id === m.class_id)?.label
+      ?? m.class_id.slice(0, 8);
+    const table = this.store.tables().find((t) => t.id === m.table_id);
+    const tableName = table ? `${table.table_schema}.${table.table_name}` : m.table_id.slice(0, 8);
+    const uriCol = m.bindings?.find((b) => b.target_kind === 'instance_uri')?.source_column;
+    const uriHint = uriCol ? ` · URI=${uriCol}` : ' · 缺实例URI';
+    return `${cls} ← ${tableName}${uriHint}`;
+  }
+
+  confirmDeleteMapping(id: string, ev: Event): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!confirm('确认删除该字段映射？此操作不可恢复。')) return;
+    this.store.deleteMapping(id);
+  }
+
+  sourceTypeLabel(sourceType: string): string {
+    if (sourceType === 'ai_unstructured') return '非结构化';
+    if (sourceType === 'structured_mapping') return '结构化';
+    if (sourceType === 'manual') return '手工';
+    return sourceType;
   }
 }

@@ -9,6 +9,7 @@ export interface TargetProperty {
   label: string;
   kind: 'instance_uri' | 'data' | 'object';
   datatype?: string | null;
+  target_kind?: 'instance_uri' | 'property';
 }
 
 export interface MappingBinding {

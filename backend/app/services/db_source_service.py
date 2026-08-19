@@ -300,21 +300,29 @@ class DbSourceService:
             await conn.close()
 
         old = await self.table_repo.list_by_source(session, obj.id)
-        selected_keys = {
-            (t.table_schema, t.table_name) for t in old if t.selected_for_modeling
-        }
-        await self.table_repo.delete_by_source(session, obj.id)
+        by_key = {(t.table_schema, t.table_name): t for t in old}
+        seen: set[tuple[str, str]] = set()
 
         for item in meta:
-            table = DataSourceTable(
-                data_source_id=obj.id,
-                table_schema=item["schema"],
-                table_name=item["name"],
-                column_count=len(item["columns"]),
-                selected_for_modeling=(item["schema"], item["name"]) in selected_keys,
-                is_generated=False,
-            )
-            await self.table_repo.create(session, table)
+            key = (item["schema"], item["name"])
+            seen.add(key)
+            existing = by_key.get(key)
+            if existing:
+                table = existing
+                table.column_count = len(item["columns"])
+                # Keep selected_for_modeling / id stable so field mappings survive re-sync.
+                await self.table_repo.delete_columns(session, table.id)
+            else:
+                table = DataSourceTable(
+                    data_source_id=obj.id,
+                    table_schema=item["schema"],
+                    table_name=item["name"],
+                    column_count=len(item["columns"]),
+                    selected_for_modeling=False,
+                    is_generated=False,
+                )
+                await self.table_repo.create(session, table)
+
             cols = [
                 DataSourceTableColumn(
                     table_id=table.id,
@@ -326,6 +334,10 @@ class DbSourceService:
                 for c in item["columns"]
             ]
             await self.table_repo.bulk_create_columns(session, cols)
+
+        for key, table in by_key.items():
+            if key not in seen:
+                await self.table_repo.delete(session, table)
 
         obj.table_count = len(meta)
         obj.last_synced_at = datetime.now(timezone.utc)

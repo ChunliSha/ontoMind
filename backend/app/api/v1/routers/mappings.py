@@ -38,3 +38,8 @@ async def list_mappings(
 @router.post("", response_model=MappingRead, status_code=status.HTTP_201_CREATED)
 async def save_mapping(body: MappingCreate, session: AsyncSession = Depends(get_session)):
     return await svc.save(session, body)
+
+
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_mapping(id: str, session: AsyncSession = Depends(get_session)):
+    await svc.delete(session, id)

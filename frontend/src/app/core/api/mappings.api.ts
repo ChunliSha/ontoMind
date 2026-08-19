@@ -22,4 +22,8 @@ export class MappingsApi {
   save(body: MappingCreate): Observable<MappingRead> {
     return this.api.post<MappingRead>('/mappings', body);
   }
+
+  remove(id: string): Observable<void> {
+    return this.api.delete<void>(`/mappings/${id}`);
+  }
 }

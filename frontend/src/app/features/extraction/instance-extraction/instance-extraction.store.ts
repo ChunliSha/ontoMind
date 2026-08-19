@@ -20,6 +20,34 @@ import { DbSourceRead, DbTableRead } from '../../../core/models/db-source';
 import { ToastService } from '../../../core/services/toast.service';
 import { switchMap, takeWhile, timer } from 'rxjs';
 
+type PreviewView = 'unstruct' | 'struct' | 'merged';
+
+interface PreviewBucket {
+  task: ExtractionTaskRead | null;
+  instances: InstanceRead[];
+  stats: InstanceStat[];
+}
+
+function emptyPreview(): PreviewBucket {
+  return { task: null, instances: [], stats: [] };
+}
+
+function statsFromInstances(items: InstanceRead[]): InstanceStat[] {
+  const byClass = new Map<string, InstanceStat>();
+  for (const i of items) {
+    const cur = byClass.get(i.class_id);
+    if (cur) cur.count += 1;
+    else {
+      byClass.set(i.class_id, {
+        class_id: i.class_id,
+        class_label: i.class_label || i.class_id.slice(0, 8),
+        count: 1,
+      });
+    }
+  }
+  return [...byClass.values()].sort((a, b) => b.count - a.count);
+}
+
 @Injectable()
 export class InstanceExtractionStore {
   private readonly extraction = inject(ExtractionApi);
@@ -43,11 +71,29 @@ export class InstanceExtractionStore {
   readonly models = signal<LlmModelRead[]>([]);
   readonly selectedModelId = signal<string | null>(null);
   readonly replaceExisting = signal(true);
+  /** In-flight / last polled task (step 3 progress). */
   readonly task = signal<ExtractionTaskRead | null>(null);
-  readonly instances = signal<InstanceRead[]>([]);
-  readonly stats = signal<InstanceStat[]>([]);
+  /**
+   * Result preview scope:
+   * - unstruct / struct: that submodule only
+   * - merged: combined preview of both source types
+   */
+  readonly previewView = signal<PreviewView>('unstruct');
+  readonly unstructPreview = signal<PreviewBucket>(emptyPreview());
+  readonly structPreview = signal<PreviewBucket>(emptyPreview());
+  readonly mergedPreview = signal<PreviewBucket>(emptyPreview());
   readonly previewClassId = signal<string | null>(null);
   readonly instanceDetail = signal<InstanceDetail | null>(null);
+
+  readonly activePreview = computed(() => {
+    const v = this.previewView();
+    if (v === 'merged') return this.mergedPreview();
+    if (v === 'struct') return this.structPreview();
+    return this.unstructPreview();
+  });
+  readonly instances = computed(() => this.activePreview().instances);
+  readonly stats = computed(() => this.activePreview().stats);
+  readonly previewTask = computed(() => this.activePreview().task);
 
   readonly filteredInstances = computed(() => {
     const classId = this.previewClassId();
@@ -76,6 +122,13 @@ export class InstanceExtractionStore {
     return [...map.values()].sort((a, b) => b.count - a.count);
   });
 
+  readonly previewTitle = computed(() => {
+    const v = this.previewView();
+    if (v === 'merged') return '合并预览（非结构化 + 结构化）';
+    if (v === 'struct') return '结构化抽取结果预览';
+    return '非结构化抽取结果预览';
+  });
+
   readonly inventory = signal<InstanceInventory | null>(null);
   readonly inventoryVersion = signal<number | null>(null);
   readonly inventoryInstances = signal<InstanceRead[]>([]);
@@ -83,6 +136,8 @@ export class InstanceExtractionStore {
 
   readonly dbSources = signal<DbSourceRead[]>([]);
   readonly tables = signal<DbTableRead[]>([]);
+  readonly selectedDbSourceId = signal('');
+  readonly tablesLoading = signal(false);
   readonly selectedTableId = signal('');
   readonly selectedClassId = signal('');
   readonly sourceFields = signal<SourceField[]>([]);
@@ -126,11 +181,14 @@ export class InstanceExtractionStore {
       this.toast.error('请先选择目标 Schema');
       return;
     }
-    if (n === 2 && this.mode() === 'unstruct' && this.files().length === 0) {
-      // still allow viewing empty file list
-    }
-    if (n === 4 && !this.instances().length && !this.task()) {
-      // allow empty preview; user may have browsed inventory into step 4 already
+    if (n === 4) {
+      // Entering preview always shows the current submodule scope (not merged).
+      this.previewView.set(this.mode());
+      this.previewClassId.set(null);
+      const bucket = this.mode() === 'struct' ? this.structPreview() : this.unstructPreview();
+      if (!bucket.instances.length) {
+        this.loadModePreview(this.mode(), false);
+      }
     }
 
     this.step.set(n);
@@ -142,13 +200,49 @@ export class InstanceExtractionStore {
     return !!this.schemaId();
   }
 
+  setMode(mode: 'unstruct' | 'struct'): void {
+    this.mode.set(mode);
+    this.previewView.set(mode);
+    this.previewClassId.set(null);
+    this.goToStep(1);
+  }
+
   setSchema(id: string): void {
     this.schemaId.set(id);
     const schema = this.schemas().find((s) => s.id === id);
     this.inventoryVersion.set(schema?.version ?? null);
+    this.selectedMappingIds.set(new Set());
+    this.unstructPreview.set(emptyPreview());
+    this.structPreview.set(emptyPreview());
+    this.mergedPreview.set(emptyPreview());
+    this.previewView.set(this.mode());
+    this.previewClassId.set(null);
+    this.task.set(null);
     this.schemasApi.classes(id).subscribe({ next: (c) => this.classes.set(c) });
-    this.mappingsApi.list({ schema_id: id }).subscribe({ next: (m) => this.mappings.set(m), error: () => this.mappings.set([]) });
+    this.reloadMappings();
     this.refreshInventory();
+  }
+
+  /** Refresh saved mappings and drop stale checkbox selections. */
+  reloadMappings(): void {
+    const id = this.schemaId();
+    if (!id) {
+      this.mappings.set([]);
+      this.selectedMappingIds.set(new Set());
+      return;
+    }
+    this.mappingsApi.list({ schema_id: id }).subscribe({
+      next: (m) => {
+        this.mappings.set(m);
+        const valid = new Set(m.map((x) => x.id));
+        const selected = new Set([...this.selectedMappingIds()].filter((x) => valid.has(x)));
+        this.selectedMappingIds.set(selected);
+      },
+      error: () => {
+        this.mappings.set([]);
+        this.selectedMappingIds.set(new Set());
+      },
+    });
   }
 
   setInventoryVersion(version: number | null): void {
@@ -229,30 +323,93 @@ export class InstanceExtractionStore {
   }
 
   browseInventory(): void {
+    this.showMergedPreview();
+  }
+
+  /** Combined preview of unstructured + structured instances for the selected schema version. */
+  showMergedPreview(): void {
     const id = this.schemaId();
     if (!id) return;
     const ver = this.inventoryVersion();
-    this.task.set(null);
     this.previewClassId.set(null);
+    this.previewView.set('merged');
     this.schemasApi.instanceInventory(id, ver).subscribe({
-      next: (inv) => {
-        this.inventory.set(inv);
-        this.stats.set(inv.by_class ?? []);
-      },
+      next: (inv) => this.inventory.set(inv),
     });
     this.schemasApi.listInstances(id, {
       schema_version: ver,
       page: 1,
-      page_size: 100,
+      page_size: 200,
     }).subscribe({
       next: (r) => {
-        this.inventoryInstances.set(r.items ?? []);
+        const items = r.items ?? [];
+        this.inventoryInstances.set(items);
         this.inventoryTotal.set(r.total ?? 0);
-        this.instances.set(r.items ?? []);
-        this.goToStep(4);
+        this.mergedPreview.set({
+          task: null,
+          instances: items,
+          stats: statsFromInstances(items),
+        });
+        this.step.set(4);
+        if (4 > this.maxReachedStep()) this.maxReachedStep.set(4);
+        this.toast.success(`合并预览：共 ${r.total ?? items.length} 条实例`);
       },
-      error: () => this.toast.error('加载实例库失败'),
+      error: () => this.toast.error('加载合并预览失败'),
     });
+  }
+
+  /** Reload preview for one submodule from instance library (filtered by source_type). */
+  showModePreview(mode: 'unstruct' | 'struct' = this.mode()): void {
+    this.loadModePreview(mode, true);
+  }
+
+  private loadModePreview(mode: 'unstruct' | 'struct', enterStep4: boolean): void {
+    const id = this.schemaId();
+    if (!id) return;
+    const sourceType = mode === 'struct' ? 'structured_mapping' : 'ai_unstructured';
+    const ver = this.inventoryVersion();
+    this.previewView.set(mode);
+    this.previewClassId.set(null);
+    this.schemasApi.listInstances(id, {
+      schema_version: ver,
+      source_type: sourceType,
+      page: 1,
+      page_size: 200,
+    }).subscribe({
+      next: (r) => {
+        const items = r.items ?? [];
+        const bucket: PreviewBucket = {
+          task: mode === 'struct' ? this.structPreview().task : this.unstructPreview().task,
+          instances: items,
+          stats: statsFromInstances(items),
+        };
+        if (mode === 'struct') this.structPreview.set(bucket);
+        else this.unstructPreview.set(bucket);
+        if (enterStep4) {
+          this.step.set(4);
+          if (4 > this.maxReachedStep()) this.maxReachedStep.set(4);
+        }
+      },
+      error: () => {
+        if (enterStep4) this.toast.error('加载子模块预览失败');
+      },
+    });
+  }
+
+  private writeModePreview(
+    mode: 'unstruct' | 'struct',
+    task: ExtractionTaskRead | null,
+    items: InstanceRead[],
+  ): void {
+    const bucket: PreviewBucket = {
+      task,
+      instances: items,
+      stats: statsFromInstances(items),
+    };
+    if (mode === 'struct') this.structPreview.set(bucket);
+    else this.unstructPreview.set(bucket);
+    this.previewView.set(mode);
+    this.previewClassId.set(null);
   }
 
   setPreviewClassFilter(classId: string | null): void {
@@ -270,7 +427,33 @@ export class InstanceExtractionStore {
   }
 
   loadTables(sourceId: string): void {
-    this.dbApi.tables(sourceId).subscribe({ next: (t) => this.tables.set(t.filter((x) => x.selected_for_modeling)) });
+    this.selectedDbSourceId.set(sourceId || '');
+    this.tables.set([]);
+    this.selectedTableId.set('');
+    if (!sourceId) return;
+    this.tablesLoading.set(true);
+    this.dbApi.tables(sourceId).subscribe({
+      next: (rows) => {
+        const all = rows ?? [];
+        const marked = all.filter((x) => x.selected_for_modeling);
+        // Prefer tables marked for modeling; if none marked yet, show all reflected tables
+        // so structured extraction can proceed without a prior trip to 结构化数据管理.
+        this.tables.set(marked.length ? marked : all);
+        this.tablesLoading.set(false);
+        // Re-sync may recreate tables; refresh mappings so UI never keeps deleted IDs.
+        this.reloadMappings();
+        if (!all.length) {
+          this.toast.error('该数据源下未反射到任何表，请检查连接权限或库中是否有表');
+        } else if (!marked.length) {
+          this.toast.success(`已加载 ${all.length} 张表（尚未勾选建模表，已全部列出）`);
+        }
+      },
+      error: () => {
+        this.tablesLoading.set(false);
+        this.tables.set([]);
+        this.toast.error('加载表清单失败，请确认数据源可连接');
+      },
+    });
   }
 
   openMapping(tableId: string, classId: string): void {
@@ -282,17 +465,24 @@ export class InstanceExtractionStore {
   }
 
   addLink(sourceCol: string, target: TargetProperty): void {
-    const next = this.links().filter((l) => l.source !== sourceCol && !(target.kind === 'instance_uri' && l.targetKind === 'instance_uri'));
+    const isUri = target.target_kind === 'instance_uri' || target.kind === 'instance_uri';
+    const next = this.links().filter(
+      (l) => l.source !== sourceCol && !(isUri && l.targetKind === 'instance_uri'),
+    );
     next.push({
       source: sourceCol,
       target: target.id || '__uri__',
-      targetKind: target.kind === 'instance_uri' ? 'instance_uri' : 'property',
-      targetPropertyId: target.id,
+      targetKind: isUri ? 'instance_uri' : 'property',
+      targetPropertyId: isUri ? null : target.id,
     });
     this.links.set(next);
   }
 
   saveMapping(onDone?: () => void): void {
+    if (!this.links().some((l) => l.targetKind === 'instance_uri')) {
+      this.toast.error('请至少绑定一个字段作为实例 URI');
+      return;
+    }
     const bindings: MappingBinding[] = this.links().map((l) => ({
       target_kind: l.targetKind,
       target_property_id: l.targetKind === 'property' ? l.targetPropertyId : null,
@@ -304,11 +494,32 @@ export class InstanceExtractionStore {
       table_id: this.selectedTableId(),
       bindings,
     }).subscribe({
-      next: () => {
+      next: (saved) => {
         this.toast.success('映射已保存');
-        this.mappingsApi.list({ schema_id: this.schemaId() }).subscribe({ next: (m) => this.mappings.set(m) });
+        this.mappingsApi.list({ schema_id: this.schemaId() }).subscribe({
+          next: (m) => {
+            this.mappings.set(m);
+            const valid = new Set(m.map((x) => x.id));
+            const selected = new Set([...this.selectedMappingIds()].filter((x) => valid.has(x)));
+            selected.add(saved.id);
+            this.selectedMappingIds.set(selected);
+          },
+        });
         onDone?.();
       },
+    });
+  }
+
+  deleteMapping(id: string): void {
+    this.mappingsApi.remove(id).subscribe({
+      next: () => {
+        this.mappings.set(this.mappings().filter((m) => m.id !== id));
+        const selected = new Set(this.selectedMappingIds());
+        selected.delete(id);
+        this.selectedMappingIds.set(selected);
+        this.toast.success('映射已删除');
+      },
+      error: () => this.toast.error('删除映射失败'),
     });
   }
 
@@ -317,25 +528,28 @@ export class InstanceExtractionStore {
       this.toast.error('请选择用于抽取的模型');
       return;
     }
-    this.instances.set([]);
-    this.stats.set([]);
+    this.unstructPreview.set(emptyPreview());
+    this.previewView.set('unstruct');
     this.previewClassId.set(null);
     this.extraction.startUnstructured({
       schema_id: this.schemaId(),
       file_ids: [...this.selectedFileIds()],
       model_id: this.selectedModelId(),
       replace_existing: this.replaceExisting(),
-    }).subscribe({ next: (t) => this.poll(t.task_id) });
+    }).subscribe({ next: (t) => this.poll(t.task_id, 'unstruct') });
   }
 
   startStructured(): void {
+    this.structPreview.set(emptyPreview());
+    this.previewView.set('struct');
+    this.previewClassId.set(null);
     this.extraction.startStructured({
       schema_id: this.schemaId(),
       mapping_ids: [...this.selectedMappingIds()],
-    }).subscribe({ next: (t) => this.poll(t.task_id) });
+    }).subscribe({ next: (t) => this.poll(t.task_id, 'struct') });
   }
 
-  private poll(taskId: string): void {
+  private poll(taskId: string, mode: 'unstruct' | 'struct'): void {
     this.goToStep(3);
     timer(0, 400).pipe(
       switchMap(() => this.extraction.getTask(taskId)),
@@ -344,7 +558,6 @@ export class InstanceExtractionStore {
       next: (t) => {
         this.task.set(t);
         if (t.status === 'succeeded') {
-          this.goToStep(4);
           const summary = t.output_summary as { succeeded?: number; failed?: number; schema_version?: number } | null;
           const ok = summary?.succeeded ?? 0;
           const fail = summary?.failed ?? 0;
@@ -352,20 +565,9 @@ export class InstanceExtractionStore {
           this.extraction.taskInstances(taskId, { page: 1, page_size: 200 }).subscribe({
             next: (r) => {
               const items = r.items ?? [];
-              this.instances.set(items);
-              const byClass = new Map<string, InstanceStat>();
-              for (const i of items) {
-                const cur = byClass.get(i.class_id);
-                if (cur) cur.count += 1;
-                else {
-                  byClass.set(i.class_id, {
-                    class_id: i.class_id,
-                    class_label: i.class_label || i.class_id.slice(0, 8),
-                    count: 1,
-                  });
-                }
-              }
-              this.stats.set([...byClass.values()].sort((a, b) => b.count - a.count));
+              this.writeModePreview(mode, t, items);
+              this.step.set(4);
+              if (4 > this.maxReachedStep()) this.maxReachedStep.set(4);
               this.refreshInventory();
               if ((r.total ?? items.length) === 0) {
                 this.toast.error(

@@ -37,6 +37,16 @@ class TableRepository:
         )
         await session.flush()
 
+    async def delete_columns(self, session: AsyncSession, table_id: uuid.UUID) -> None:
+        await session.execute(
+            delete(DataSourceTableColumn).where(DataSourceTableColumn.table_id == table_id)
+        )
+        await session.flush()
+
+    async def delete(self, session: AsyncSession, obj: DataSourceTable) -> None:
+        await session.delete(obj)
+        await session.flush()
+
     async def create(self, session: AsyncSession, obj: DataSourceTable) -> DataSourceTable:
         session.add(obj)
         await session.flush()

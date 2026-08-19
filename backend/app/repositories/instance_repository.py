@@ -147,6 +147,22 @@ class InstanceRepository:
         )
         return result.scalar_one_or_none()
 
+    async def find_by_local_name(
+        self,
+        session: AsyncSession,
+        schema_id: uuid.UUID,
+        class_id: uuid.UUID,
+        local_name: str,
+    ) -> OntologyInstance | None:
+        result = await session.execute(
+            select(OntologyInstance).where(
+                OntologyInstance.schema_id == schema_id,
+                OntologyInstance.class_id == class_id,
+                OntologyInstance.local_name == local_name,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def create(self, session: AsyncSession, obj: OntologyInstance) -> OntologyInstance:
         session.add(obj)
         await session.flush()
@@ -164,6 +180,23 @@ class InstanceRepository:
         self, session: AsyncSession, values: list[InstanceDataValue]
     ) -> None:
         session.add_all(values)
+        await session.flush()
+
+    async def replace_data_values(
+        self,
+        session: AsyncSession,
+        instance_id: uuid.UUID,
+        values: list[InstanceDataValue],
+        *,
+        property_ids: list[uuid.UUID] | None = None,
+    ) -> None:
+        """Replace data values for an instance (optionally scoped to property_ids)."""
+        stmt = delete(InstanceDataValue).where(InstanceDataValue.instance_id == instance_id)
+        if property_ids is not None:
+            stmt = stmt.where(InstanceDataValue.property_id.in_(property_ids))
+        await session.execute(stmt)
+        if values:
+            session.add_all(values)
         await session.flush()
 
     async def count_by_schema(

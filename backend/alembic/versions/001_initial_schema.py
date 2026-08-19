@@ -204,7 +204,7 @@ def upgrade() -> None:
         sa.Column("class_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("ontology_class.id", ondelete="CASCADE"), nullable=False),
         sa.Column("label", sa.String(255), nullable=False),
         sa.Column("local_name", sa.String(255)),
-        sa.Column("source_type", sa.String(16), nullable=False),
+        sa.Column("source_type", sa.String(32), nullable=False),
         sa.Column("source_ref", postgresql.JSONB()),
         sa.Column("confidence", sa.Numeric(5, 2)),
         sa.Column("extraction_task_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("extraction_task.id", ondelete="SET NULL")),

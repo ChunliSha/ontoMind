@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.ai import resolve_llm_provider
 from app.ai.base import SchemaSnapshot, SchemaSnapshotClass, SchemaSnapshotProperty
@@ -184,10 +185,23 @@ class ExtractionService:
         mappings = []
         for mid in body.mapping_ids:
             m = await self.mapping_repo.get_by_id(session, parse_uuid(mid))
-            if not m or not m.bindings:
-                raise AppError(ErrorCode.MAPPING_001)
+            if not m:
+                raise AppError(
+                    ErrorCode.NOT_FOUND,
+                    message="所选字段映射不存在或已失效（可能因重新同步表结构被删除），请重新配置并勾选映射",
+                )
+            if not m.bindings:
+                raise AppError(
+                    ErrorCode.MAPPING_001,
+                    message="所选映射没有字段绑定，请重新配置字段映射",
+                )
             if not any(b.target_kind == "instance_uri" for b in m.bindings):
                 raise AppError(ErrorCode.MAPPING_001)
+            if m.schema_id != sid:
+                raise AppError(
+                    ErrorCode.MAPPING_001,
+                    message="所选映射不属于当前 Schema，请重新勾选",
+                )
             mappings.append(m)
 
         running = await self.task_repo.find_running(
@@ -576,8 +590,16 @@ class ExtractionService:
         async with AsyncSessionLocal() as session:
             task = await self.task_repo.get_by_id(session, task_id)
             assert task and task.schema_id
+            schema = await self.schema_repo.get_by_id(session, task.schema_id)
+            if not schema:
+                raise RuntimeError("schema not found for structured extraction")
+            schema_version = int(schema.version or 1)
             mapping_ids = [parse_uuid(x) for x in (task.input or {}).get("mapping_ids", [])]
             created = 0
+            updated = 0
+            skipped = 0
+            fetch_errors: list[str] = []
+
             for mi, mid in enumerate(mapping_ids):
                 mapping = await self.mapping_repo.get_by_id(session, mid)
                 if not mapping:
@@ -600,25 +622,98 @@ class ExtractionService:
                     for b in prop_bindings
                     if b.target_property_id
                 }
+                # Prefer human-readable label from 姓名 / name-like data props
+                label_cols = [
+                    b.source_column
+                    for b in prop_bindings
+                    if b.target_property_id
+                    and props.get(b.target_property_id)
+                    and props[b.target_property_id].kind == "data"
+                    and props[b.target_property_id].label
+                    in {"姓名", "名称", "客户名称", "name", "full_name"}
+                ]
 
-                # Batch read via asyncpg for postgres; stub empty for unreachable sources
-                rows = await self._fetch_source_rows(ds, table.table_schema, table.table_name, batch=500)
-                total_rows = max(len(rows), 1)
-                for ri, row in enumerate(rows):
-                    local = str(row.get(uri_col, f"row_{ri}"))
-                    label = local
-                    inst = OntologyInstance(
-                        schema_id=task.schema_id,
-                        class_id=mapping.class_id,
-                        label=label,
-                        local_name=label,
-                        source_type="structured_mapping",
-                        source_ref={"mapping_id": str(mapping.id), "row": ri},
-                        extraction_task_id=task_id,
-                        confidence=Decimal("100"),
+                rows, fetch_err = await self._fetch_source_rows(
+                    ds, table.table_schema, table.table_name, batch=500
+                )
+                if fetch_err:
+                    fetch_errors.append(
+                        f"{table.table_schema}.{table.table_name}: {fetch_err}"
                     )
-                    inst = await self.instance_repo.create(session, inst)
-                    values = []
+                    continue
+                if not rows:
+                    logger.info(
+                        "structured extract: no rows in %s.%s",
+                        table.table_schema,
+                        table.table_name,
+                    )
+                    continue
+
+                total_rows = len(rows)
+                for ri, row in enumerate(rows):
+                    raw_uri = row.get(uri_col)
+                    if raw_uri is None or str(raw_uri).strip() == "":
+                        skipped += 1
+                        continue
+                    local = str(raw_uri).strip()
+                    display = local
+                    for lc in label_cols:
+                        v = row.get(lc)
+                        if v is not None and str(v).strip():
+                            display = str(v).strip()
+                            break
+
+                    existing = await self.instance_repo.find_by_local_name(
+                        session, task.schema_id, mapping.class_id, local
+                    )
+                    if not existing:
+                        existing = await self.instance_repo.find_by_label(
+                            session, task.schema_id, mapping.class_id, local
+                        )
+
+                    if existing:
+                        existing.label = display
+                        existing.local_name = local
+                        existing.source_type = "structured_mapping"
+                        existing.source_ref = {
+                            "mapping_id": str(mapping.id),
+                            "uri_column": uri_col,
+                            "uri": local,
+                            "row": ri,
+                        }
+                        existing.extraction_task_id = task_id
+                        existing.confidence = Decimal("100")
+                        existing.schema_version = schema_version
+                        inst = existing
+                        updated += 1
+                    else:
+                        inst = OntologyInstance(
+                            schema_id=task.schema_id,
+                            class_id=mapping.class_id,
+                            label=display,
+                            local_name=local,
+                            source_type="structured_mapping",
+                            source_ref={
+                                "mapping_id": str(mapping.id),
+                                "uri_column": uri_col,
+                                "uri": local,
+                                "row": ri,
+                            },
+                            extraction_task_id=task_id,
+                            confidence=Decimal("100"),
+                            schema_version=schema_version,
+                        )
+                        inst = await self.instance_repo.create(session, inst)
+                        created += 1
+
+                    values: list[InstanceDataValue] = []
+                    mapped_data_prop_ids: list[uuid.UUID] = [
+                        p.id
+                        for b in prop_bindings
+                        if b.target_property_id
+                        and (p := props.get(b.target_property_id)) is not None
+                        and p.kind == "data"
+                    ]
                     for b in prop_bindings:
                         if not b.target_property_id:
                             continue
@@ -637,7 +732,6 @@ class ExtractionService:
                                 )
                             )
                         else:
-                            # object: find/create target by label
                             if not prop.range_class_id:
                                 continue
                             target = await self.instance_repo.find_by_label(
@@ -650,26 +744,45 @@ class ExtractionService:
                                         schema_id=task.schema_id,
                                         class_id=prop.range_class_id,
                                         label=str(val),
-                                        local_name=str(val),
+                                        local_name=label_to_local_name(str(val)),
                                         source_type="structured_mapping",
                                         extraction_task_id=task_id,
+                                        schema_version=schema_version,
                                     ),
                                 )
-                            await self.relation_repo.create(
-                                session,
-                                InstanceRelation(
-                                    subject_instance_id=inst.id,
-                                    property_id=prop.id,
-                                    object_instance_id=target.id,
-                                ),
+                            # Avoid duplicate object edges on re-run
+                            existing_rel = await session.execute(
+                                select(InstanceRelation).where(
+                                    InstanceRelation.subject_instance_id == inst.id,
+                                    InstanceRelation.property_id == prop.id,
+                                    InstanceRelation.object_instance_id == target.id,
+                                )
                             )
-                    if values:
-                        await self.instance_repo.add_data_values(session, values)
-                    created += 1
+                            if existing_rel.scalar_one_or_none() is None:
+                                await self.relation_repo.create(
+                                    session,
+                                    InstanceRelation(
+                                        subject_instance_id=inst.id,
+                                        property_id=prop.id,
+                                        object_instance_id=target.id,
+                                    ),
+                                )
+                    if mapped_data_prop_ids:
+                        await self.instance_repo.replace_data_values(
+                            session,
+                            inst.id,
+                            values,
+                            property_ids=mapped_data_prop_ids,
+                        )
                     prog = ((mi + (ri + 1) / total_rows) / max(len(mapping_ids), 1)) * 100
                     if ri % 20 == 0:
                         await runner.update_task_progress(task_id, progress=min(prog, 99))
                         await session.commit()
+
+            if fetch_errors and created == 0 and updated == 0:
+                raise RuntimeError(
+                    "结构化抽取读取源表失败: " + "; ".join(fetch_errors)
+                )
 
             await session.commit()
             await self.schema_repo.invalidate_graph_cache(session, task.schema_id)
@@ -678,7 +791,13 @@ class ExtractionService:
                 task_id,
                 status="succeeded",
                 progress=100,
-                output_summary={"instances_created": created},
+                output_summary={
+                    "instances_created": created,
+                    "instances_updated": updated,
+                    "rows_skipped": skipped,
+                    "schema_version": schema_version,
+                    "fetch_errors": fetch_errors or None,
+                },
             )
 
     async def _run_business_logic(self, task_id: uuid.UUID) -> None:
@@ -843,11 +962,16 @@ class ExtractionService:
 
     async def _fetch_source_rows(
         self, ds, table_schema: str, table_name: str, *, batch: int = 500
-    ) -> list[dict]:
-        """Batch SELECT from source DB; returns [] if unreachable (demo-safe)."""
+    ) -> tuple[list[dict], str | None]:
+        """Batch SELECT from source DB.
+
+        Returns (rows, error). error is set when the source is unreachable / query fails;
+        empty rows with error=None means the table genuinely has no data.
+        """
         if ds.db_type not in ("postgres", "gaussdb"):
-            logger.warning("structured ETL only fully supports postgres/gaussdb in MVP")
-            return []
+            msg = f"structured ETL only fully supports postgres/gaussdb (got {ds.db_type})"
+            logger.warning(msg)
+            return [], msg
         try:
             import asyncpg
 
@@ -863,7 +987,11 @@ class ExtractionService:
             try:
                 rows: list[dict] = []
                 offset = 0
-                q = f'SELECT * FROM "{table_schema}"."{table_name}" LIMIT {batch} OFFSET '
+                # Quote identifiers; schema/table come from reflection metadata, not user free text.
+                q = (
+                    f'SELECT * FROM "{table_schema}"."{table_name}" '
+                    f"LIMIT {int(batch)} OFFSET "
+                )
                 while True:
                     chunk = await conn.fetch(q + str(offset))
                     if not chunk:
@@ -873,12 +1001,12 @@ class ExtractionService:
                     if len(chunk) < batch:
                         break
                     offset += batch
-                return rows
+                return rows, None
             finally:
                 await conn.close()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("source fetch failed: %s — returning empty", exc)
-            return []
+            logger.warning("source fetch failed: %s", exc)
+            return [], str(exc)
 
     async def _instance_summary(self, session: AsyncSession, obj: OntologyInstance) -> InstanceRead:
         cls = await self.class_repo.get_by_id(session, obj.class_id)
