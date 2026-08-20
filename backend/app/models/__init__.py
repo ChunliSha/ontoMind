@@ -1,6 +1,8 @@
 """ORM models package — import all models for Alembic metadata."""
 
 from app.models.business_logic import BusinessLogicRule
+from app.models.ontology_model import OntologyModel
+from app.models.topology import BusinessLogicTopology, BusinessLogicTopologyNode
 from app.models.data_source import (
     DataSourceDb,
     DataSourceFile,
@@ -27,7 +29,10 @@ __all__ = [
     "OntologyInstance",
     "InstanceDataValue",
     "InstanceRelation",
+    "OntologyModel",
     "BusinessLogicRule",
+    "BusinessLogicTopology",
+    "BusinessLogicTopologyNode",
     "GraphCache",
     "LlmModelConfig",
 ]

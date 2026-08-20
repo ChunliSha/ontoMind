@@ -15,6 +15,7 @@ const TITLES: Record<string, string> = {
   '/models': '模型管理',
   '/extraction/instances': '本体抽取',
   '/extraction/business-logic': '业务逻辑抽取',
+  '/extraction/business-logic/workspace': '业务逻辑管理',
   '/graph': '图谱探索',
 };
 

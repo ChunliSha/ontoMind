@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ExtractionTaskRead(BaseModel):
@@ -17,6 +17,7 @@ class ExtractionTaskRead(BaseModel):
         "instance_unstructured",
         "instance_structured",
         "business_logic",
+        "business_logic_topology",
     ]
     status: Literal["pending", "running", "succeeded", "failed"]
     schema_id: str | None = None
@@ -49,9 +50,20 @@ class StructuredExtractionRequest(BaseModel):
 
 
 class BusinessLogicExtractionRequest(BaseModel):
-    schema_id: str
+    ontology_model_id: str | None = None
+    schema_id: str | None = None
     file_ids: list[str] = Field(min_length=1)
     ai_config: dict | None = None
+    model_id: str | None = None
+    schema_version: int | None = None
+    type_mapping: dict[str, list[str]] | None = None
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def _need_target(self) -> BusinessLogicExtractionRequest:
+        if not self.ontology_model_id and not self.schema_id:
+            raise ValueError("请选择本体模型")
+        return self
 
 
 class ClearInstancesRequest(BaseModel):

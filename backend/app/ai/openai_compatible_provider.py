@@ -19,7 +19,9 @@ from app.ai.base import (
     SchemaInductionResult,
     SchemaSnapshot,
 )
+from app.ai.prompts.business_logic_topology import TOPOLOGY_RETRY, TOPOLOGY_SYSTEM
 from app.ai.prompts.schema_induction import SCHEMA_INDUCTION_RETRY, SCHEMA_INDUCTION_SYSTEM
+from app.topology.logic_graph import LogicGraph, logic_graph_from_llm
 from app.core.config import settings
 from app.core.exceptions import AppError, ErrorCode
 
@@ -252,3 +254,76 @@ class OpenAICompatibleProvider:
                 error=str(exc),
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
+
+    async def extract_business_logic_topology(
+        self,
+        text: str,
+        catalog_by_class: dict[str, list[dict[str, str]]],
+    ) -> AIResult[LogicGraph]:
+        started = time.perf_counter()
+        chunk = (text or "").strip()
+        if not chunk:
+            return AIResult(
+                success=False,
+                error="文档无可抽取文本",
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
+
+        class_keys = list(catalog_by_class.keys())
+        clipped_catalog: dict[str, list[dict[str, str]]] = {}
+        for class_key, items in catalog_by_class.items():
+            clipped_catalog[class_key] = [
+                {"id": x.get("id", ""), "label": (x.get("label") or "")[:80]}
+                for x in items[:80]
+            ]
+        user_msg = (
+            f"本体类与候选实例（按类名分组，节点 type 使用类名，instance_ref 优先用 id）：\n"
+            f"{json.dumps(clipped_catalog, ensure_ascii=False)}\n\n"
+            f"文档内容：\n{chunk[:8000]}"
+        )
+
+        last_error = "business logic topology extraction failed"
+        messages_user = user_msg
+        for attempt in range(3):
+            try:
+                system = (
+                    TOPOLOGY_SYSTEM
+                    if attempt == 0
+                    else TOPOLOGY_SYSTEM + "\n\n" + TOPOLOGY_RETRY
+                )
+                if attempt > 0:
+                    messages_user = f"{user_msg}\n\n上次错误：{last_error}\n请按契约重新输出。"
+                raw = await self._chat(system, messages_user, timeout=180.0)
+                data = _parse_json_object(raw)
+                graph = logic_graph_from_llm(data)
+                if not graph.nodes:
+                    last_error = "nodes 为空，未抽取出任何业务逻辑节点"
+                    logger.warning(
+                        "extract_business_logic_topology empty nodes (attempt %s): %s",
+                        attempt + 1,
+                        raw[:500],
+                    )
+                    continue
+                return AIResult(
+                    success=True,
+                    result=graph,
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                )
+            except (ValidationError, json.JSONDecodeError, ValueError, KeyError, httpx.HTTPError) as exc:
+                last_error = str(exc)
+                logger.warning(
+                    "extract_business_logic_topology attempt %s failed: %s",
+                    attempt + 1,
+                    last_error,
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                logger.exception("extract_business_logic_topology unexpected error")
+                break
+
+        return AIResult(
+            success=False,
+            error=last_error,
+            latency_ms=int((time.perf_counter() - started) * 1000),
+        )

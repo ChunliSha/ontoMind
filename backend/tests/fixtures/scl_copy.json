@@ -1,0 +1,435 @@
+{
+    "workflow_id": "4b31b699ba8441b781ba8ee8a615831e",
+    "name": "scl_copy",
+    "description": "",
+    "created_at": "2026-08-19T17:28:20.707265",
+    "last_updated": "2026-08-19T17:28:26.365407",
+    "nodes": [
+      {
+        "id": "1ce6a09f-2309-4125-a8b5-9cb4c89649c4",
+        "label": "主站侧日志是否完整",
+        "x": -268,
+        "y": -168,
+        "color": "#C8E6C9",
+        "extension_id": "operation_node_20251126_f5b8c2",
+        "type": "业务操作",
+        "properties": {
+          "name": "主站侧日志是否完整",
+          "description": "检查主站侧日志是否完整，即检查是否已完整导入数据冻结时间当天及下一天的来自主站或低压集抄APP的日志",
+          "relatedDevice": "主站",
+          "step1Type": "接口调用",
+          "interfaceName": "检查主站日志完整性",
+          "requestMethod": "POST",
+          "requestPath": "/api/v1/query_master_logs_complete",
+          "requestParams": "无",
+          "responseParams": "response_info:\n     type: json\n     required: true\n     description: 主站日志是否完整，key值为主站日志，value值为完整或不完整",
+          "userGuideContent": "",
+          "step1Analysis": "主站侧日志可以来源于主站或低压集抄APP，一般要求有T和T+1的两天日志，这样指标采集状态和分析结果会更准确。另外，每天0-1点和19-24点不一定有主站侧日志，所以这两段时间若无日志，也会视为完整",
+          "judgementContent": "判断主站侧日志是否导入完整，若不完整，则最终诊断结果可能不完全准确",
+          "selectedObjectId": "自定义",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541"
+        }
+      },
+      {
+        "id": "04c8f5f0-4041-45ff-8bcb-3aad4785e7d5",
+        "label": "定界到主站，排查主站侧其他问题",
+        "x": -268,
+        "y": 472,
+        "color": "#BBDEFB",
+        "extension_id": "suggestion_node_20251126_g6c9d3",
+        "type": "建议",
+        "properties": {
+          "name": "定界到主站，排查主站侧其他问题",
+          "description": "主站召测请求报文未下发成功，且电表指标不是纯上报模式，也不存在任务过多来不及下发，建议排查主站侧相关问题，例如任务配置错误等",
+          "relatedDevice": "主站",
+          "summaryContent": "主站召测请求报文未下发成功，且电表指标不是纯上报模式，也不存在任务过多来不及下发，建议排查主站侧相关问题，例如任务配置错误等",
+          "step1Type": "总结",
+          "faultCause": "未下发抄表请求",
+          "selectedObjectId": "2cab2185-be7d-4088-ad97-18e2264a4ecd",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+          "faultCause_id": "0010001",
+          "relatedDevice_model": {
+            "id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+            "name": "主站"
+          },
+          "faultCause_model": {
+            "id": "0010001",
+            "name": "未下发抄表请求"
+          }
+        }
+      },
+      {
+        "id": "01d169e3-de64-42a8-8308-c9409944ea13",
+        "label": "主站召测请求下发",
+        "x": -268,
+        "y": -8,
+        "color": "#C8E6C9",
+        "extension_id": "operation_node_20251126_f5b8c2",
+        "type": "业务操作",
+        "properties": {
+          "name": "主站召测请求下发",
+          "description": "查询主站召测请求报文是否成功下发",
+          "relatedDevice": "主站",
+          "step1Type": "接口调用",
+          "interfaceName": "主站召测请求报文是否成功下发",
+          "requestMethod": "POST",
+          "requestPath": "/api/v1/query_masterstation_message",
+          "requestParams": "无",
+          "responseParams": "response_info:\n     type: json\n     required: true\n     description: 主站召测请求报文信息，key值为采集项，value值为1.是否成功下发，2. 下发报文编号 3. 下发时间",
+          "userGuideContent": "",
+          "step1Analysis": "主站下发给采集终端的召测请求报文会分采集项分别发送，需要分析当前采集项的召测请求报文是否成功下发了",
+          "judgementContent": "主站召测请求报文是否成功下发（是/否）",
+          "selectedObjectId": "96f1d859-6b11-413a-a9e1-9124e0e02a43",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+          "ins_name": "主站召测请求下发"
+        }
+      },
+      {
+        "id": "fb312a40-6162-40ca-91a7-4331bbcd306d",
+        "label": "电表指标是否为终端纯上报模式",
+        "x": -268,
+        "y": 152,
+        "color": "#6BA436",
+        "extension_id": "operation_node_20251126_f5b8c2",
+        "type": "业务操作",
+        "properties": {
+          "name": "电表指标是否为终端纯上报模式",
+          "description": "检查问题电表的指标是否为终端纯上报模式，若是，则主站无需下发召测请求",
+          "relatedDevice": "采集终端",
+          "step1Type": "接口调用",
+          "interfaceName": "检查指标是否为终端纯上报模式",
+          "requestMethod": "POST",
+          "requestPath": "/api/v1/query_meter_report",
+          "requestParams": "无",
+          "responseParams": "response_info:\n     type: json\n     required: true\n     description: 判断是否纯上报模式，key值为电表指标，value值为是或否",
+          "userGuideContent": "",
+          "step1Analysis": "有些台区设置的指标是由采集终端主动上报的，并且主站不会在后面进行召测",
+          "judgementContent": "判断电表指标是否为终端纯上报不召测模式",
+          "relatedDevice_id": "04fa7dc8-747d-4209-b1dc-e4e74c9e4907",
+          "relatedDevice_model": {
+            "id": "04fa7dc8-747d-4209-b1dc-e4e74c9e4907",
+            "name": "采集终端"
+          }
+        }
+      },
+      {
+        "id": "67c20e27-c647-4bf3-8ab5-d715a2474256",
+        "label": "终端是否上报指标有效数据",
+        "x": -548,
+        "y": 152,
+        "color": "#6BA436",
+        "extension_id": "operation_node_20251126_f5b8c2",
+        "type": "业务操作",
+        "properties": {
+          "name": "终端是否上报指标有效数据",
+          "description": "检查采集终端是否有成功发起指标数据上报，且报文解析成功",
+          "relatedDevice": "采集终端",
+          "step1Type": "接口调用",
+          "interfaceName": "判断终端是否上报指标有效数据",
+          "requestMethod": "POST",
+          "requestPath": "/api/v1/query_report_valid",
+          "requestParams": "无",
+          "responseParams": "response_info:\n     type: json\n     required: true\n     description: 终端是否上报指标有效数据，key值为采集指标，value值为是或否",
+          "userGuideContent": "",
+          "step1Analysis": "对于纯上报模式的电表指标，需要检查是否有成功发起上报且上报数据有效；若有，则问题归因到主站；若没有，则需排查4G网络、终端相关异常、以及终端采集电表指标情况",
+          "judgementContent": "判断终端是否上报指标有效数据",
+          "relatedDevice_id": "04fa7dc8-747d-4209-b1dc-e4e74c9e4907",
+          "relatedDevice_model": {
+            "id": "04fa7dc8-747d-4209-b1dc-e4e74c9e4907",
+            "name": "采集终端"
+          }
+        }
+      },
+      {
+        "id": "125b7d1a-ec77-4fd9-a00a-4143edc32beb",
+        "label": "终端未上报指标有效数据",
+        "x": -548,
+        "y": -8,
+        "color": "#BBDEFB",
+        "extension_id": "suggestion_node_20251126_g6c9d3",
+        "type": "建议",
+        "properties": {
+          "name": "终端未上报指标有效数据",
+          "description": "检查到指标为终端纯上报模式，但终端未上报有效数据，建议排查终端上报任务的配置和执行过程",
+          "relatedDevice": "采集终端",
+          "summaryContent": "检查到指标为终端纯上报模式，但终端未上报有效数据，建议排查终端上报任务的配置和执行过程",
+          "step1Type": "总结",
+          "faultCause": "未主动上报数据",
+          "selectedObjectId": "2cab2185-be7d-4088-ad97-18e2264a4ecd",
+          "relatedDevice_id": "04fa7dc8-747d-4209-b1dc-e4e74c9e4907",
+          "faultCause_id": "0030011",
+          "relatedDevice_model": {
+            "id": "04fa7dc8-747d-4209-b1dc-e4e74c9e4907",
+            "name": "采集终端"
+          },
+          "faultCause_model": {
+            "id": "0030011",
+            "name": "未主动上报数据"
+          }
+        }
+      },
+      {
+        "id": "2d5d0b7b-2f89-437a-8b3e-10619c2c7498",
+        "label": "主站数据是否入库",
+        "x": -828,
+        "y": 152,
+        "color": "#C8E6C9",
+        "extension_id": "operation_node_20251126_f5b8c2",
+        "type": "业务操作",
+        "properties": {
+          "name": "主站数据是否入库",
+          "description": "确认主站收到采集终端上报数据后是否正常入库",
+          "relatedDevice": "主站",
+          "step1Type": "用户指导",
+          "interfaceName": "",
+          "requestMethod": "GET",
+          "requestPath": "",
+          "requestParams": "",
+          "responseParams": "",
+          "userGuideContent": "确认主站收到采集终端上报数据后是否正常入库",
+          "step1Analysis": "",
+          "judgementContent": "主站从采集终端取到的数据是否正常入库（是/否）",
+          "selectedObjectId": "a080cd41-7e7d-4902-ab10-0167252f45f2",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+          "relatedDevice_model": {
+            "id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+            "name": "主站"
+          },
+          "ins_name": "主站数据是否入库",
+          "custom": false
+        }
+      },
+      {
+        "id": "559c53db-6992-4d09-88dc-b2a216aa8bac",
+        "label": "经过排查，无明显异常",
+        "x": -828,
+        "y": -8,
+        "color": "#BBDEFB",
+        "extension_id": "suggestion_node_20251126_g6c9d3",
+        "type": "建议",
+        "properties": {
+          "name": "经过排查，无明显异常",
+          "description": "主站成功收到采集终端上报指标数据，并且数据正常入库，电表采集过程无明显异常",
+          "relatedDevice": "无",
+          "summaryContent": "主站成功收到采集终端上报指标数据，并且数据正常入库，电表采集过程无明显异常",
+          "step1Type": "总结",
+          "faultCause": "无故障",
+          "selectedObjectId": "4e9a808d-3692-435c-a808-3248fe7a3b99",
+          "relatedDevice_id": "7",
+          "faultCause_id": "0070001",
+          "relatedDevice_model": {
+            "id": "无",
+            "name": "无"
+          },
+          "faultCause_model": {
+            "id": "0070001",
+            "name": "无故障"
+          }
+        }
+      },
+      {
+        "id": "df27f79a-c298-4c76-ba2a-db8fd54b1a5c",
+        "label": "定界到主站，排查数据入库问题",
+        "x": -1088,
+        "y": 152,
+        "color": "#BBDEFB",
+        "extension_id": "suggestion_node_20251126_g6c9d3",
+        "type": "建议",
+        "properties": {
+          "name": "定界到主站，排查数据入库问题",
+          "description": "主站收到采集终端上报指标数据，但是数据没有入库，若主站统计结果为采集失败，需要排查主站入库问题",
+          "relatedDevice": "主站",
+          "summaryContent": "主站收到采集终端上报指标数据，但是数据没有入库，若主站统计结果为采集失败，需要排查主站入库问题",
+          "step1Type": "总结",
+          "faultCause": "数据入库异常",
+          "selectedObjectId": "3f1a1f68-780e-496f-88a0-f32a6ded49a9",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+          "faultCause_id": "0010003",
+          "relatedDevice_model": {
+            "id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+            "name": "主站"
+          },
+          "faultCause_model": {
+            "id": "0010003",
+            "name": "数据入库异常"
+          },
+          "custom": false
+        }
+      },
+      {
+        "id": "aa1e9ff7-c455-4167-8aaf-ad88807f6c52",
+        "label": "主站任务过多来不及下发",
+        "x": -268,
+        "y": 312,
+        "color": "#FFCDD2",
+        "extension_id": "fault_node_20251126_e4a7b1",
+        "type": "故障",
+        "properties": {
+          "selectedObjectId": "3a8d02c6-03f3-4d7b-8778-6597f872605c",
+          "selectedObjectId_model": {
+            "name": "3a8d02c6-03f3-4d7b-8778-6597f872605c"
+          },
+          "step1Type": "用户指导",
+          "name": "主站任务过多来不及下发",
+          "description": "检查主站是否任务过多来不及下发",
+          "relatedDevice": "主站",
+          "userGuideContent": "确认主站召测请求时，主站任务是否过多，导致任务堵塞",
+          "step1Analysis": "主站下发给采集终端的召测请求报文会分采集项分别发送，如果某些采集项未成功发送，会导致电表信息采集不完整，例如主站任务堵塞会导致召测请求报文未全部成功下发",
+          "judgementContent": "召测请求时，主站是否任务堵塞（是/否）",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+          "relatedDevice_model": {
+            "id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+            "name": "主站"
+          },
+          "ins_name": "主站任务过多来不及下发"
+        }
+      },
+      {
+        "id": "a5890040-ca20-491e-b55c-3f0266235bde",
+        "label": "主站任务堵塞，排查主站问题",
+        "x": -548,
+        "y": 312,
+        "color": "#BBDEFB",
+        "extension_id": "suggestion_node_20251126_g6c9d3",
+        "type": "建议",
+        "properties": {
+          "name": "主站任务堵塞，排查主站问题",
+          "relatedDevice": "主站",
+          "relatedDevice_id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+          "relatedDevice_model": {
+            "id": "79d82c1e-5bd4-42b7-9c97-25fca5c84541",
+            "name": "主站"
+          },
+          "description": "主站召测请求报文未全部下发成功并当时存在任务堵塞，建议排查主站侧任务过多导致堵塞问题",
+          "faultCause": "主站任务过多来不及下发",
+          "faultCause_id": "0010006",
+          "faultCause_model": {
+            "id": "0010006",
+            "name": "主站任务过多来不及下发"
+          },
+          "summaryContent": "主站召测请求报文未全部下发成功并当时存在任务堵塞，建议排查主站侧任务过多导致堵塞问题"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "ed2bb0d2-9fc7-4a7b-91e3-021339e7e843",
+        "source": {
+          "cell": "01d169e3-de64-42a8-8308-c9409944ea13",
+          "port": "port-bottom"
+        },
+        "target": {
+          "cell": "fb312a40-6162-40ca-91a7-4331bbcd306d",
+          "port": "port-top"
+        },
+        "label": "否"
+      },
+      {
+        "id": "acf2bd7e-a14e-497b-b54a-c33b62e6d4b8",
+        "source": {
+          "cell": "fb312a40-6162-40ca-91a7-4331bbcd306d",
+          "port": "port-left"
+        },
+        "target": {
+          "cell": "67c20e27-c647-4bf3-8ab5-d715a2474256",
+          "port": "port-right"
+        },
+        "label": "是"
+      },
+      {
+        "id": "09a2ca14-e2c7-4900-8725-81a7c111c41b",
+        "source": {
+          "cell": "67c20e27-c647-4bf3-8ab5-d715a2474256",
+          "port": "port-left"
+        },
+        "target": {
+          "cell": "2d5d0b7b-2f89-437a-8b3e-10619c2c7498",
+          "port": "port-right"
+        },
+        "label": "是"
+      },
+      {
+        "id": "75387a33-6dbb-46e1-a497-e67145b3d1fd",
+        "source": {
+          "cell": "2d5d0b7b-2f89-437a-8b3e-10619c2c7498",
+          "port": "port-left"
+        },
+        "target": {
+          "cell": "df27f79a-c298-4c76-ba2a-db8fd54b1a5c",
+          "port": "port-right"
+        },
+        "label": "否"
+      },
+      {
+        "id": "c186446c-6e09-4585-bf0e-a29601b84037",
+        "source": {
+          "cell": "1ce6a09f-2309-4125-a8b5-9cb4c89649c4",
+          "port": "port-bottom"
+        },
+        "target": {
+          "cell": "01d169e3-de64-42a8-8308-c9409944ea13",
+          "port": "port-top"
+        },
+        "label": ""
+      },
+      {
+        "id": "640cedac-42a8-4ec7-80e8-c154895689b6",
+        "source": {
+          "cell": "2d5d0b7b-2f89-437a-8b3e-10619c2c7498",
+          "port": "port-top"
+        },
+        "target": {
+          "cell": "559c53db-6992-4d09-88dc-b2a216aa8bac",
+          "port": "port-bottom"
+        },
+        "label": "是"
+      },
+      {
+        "id": "ff33956d-2230-4480-8e4e-ff0028c8d5f7",
+        "source": {
+          "cell": "67c20e27-c647-4bf3-8ab5-d715a2474256",
+          "port": "port-top"
+        },
+        "target": {
+          "cell": "125b7d1a-ec77-4fd9-a00a-4143edc32beb",
+          "port": "port-bottom"
+        },
+        "label": "否"
+      },
+      {
+        "id": "903f502a-103a-45da-acc4-7ef5d98a55dd",
+        "source": {
+          "cell": "fb312a40-6162-40ca-91a7-4331bbcd306d",
+          "port": "port-bottom"
+        },
+        "target": {
+          "cell": "aa1e9ff7-c455-4167-8aaf-ad88807f6c52"
+        },
+        "label": "否"
+      },
+      {
+        "id": "1c3e0d0a-d30c-49c3-9f78-b94ad9314888",
+        "source": {
+          "cell": "aa1e9ff7-c455-4167-8aaf-ad88807f6c52",
+          "port": "port-bottom"
+        },
+        "target": {
+          "cell": "04c8f5f0-4041-45ff-8bcb-3aad4785e7d5",
+          "port": "port-top"
+        },
+        "label": "否"
+      },
+      {
+        "id": "2146e30f-373c-4bbf-a305-83236348bf18",
+        "source": {
+          "cell": "aa1e9ff7-c455-4167-8aaf-ad88807f6c52",
+          "port": "port-left"
+        },
+        "target": {
+          "cell": "a5890040-ca20-491e-b55c-3f0266235bde",
+          "port": "port-right"
+        },
+        "label": "是"
+      }
+    ]
+  }

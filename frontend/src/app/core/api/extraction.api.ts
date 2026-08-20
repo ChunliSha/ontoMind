@@ -13,6 +13,7 @@ import {
   StructuredExtractionRequest,
   UnstructuredExtractionRequest,
 } from '../models/extraction';
+import { TopologyRead } from '../models/topology';
 
 @Injectable({ providedIn: 'root' })
 export class ExtractionApi {
@@ -30,8 +31,15 @@ export class ExtractionApi {
     return this.api.post<TaskCreated>('/extraction/business-logic', body);
   }
 
-  getTask(id: string): Observable<ExtractionTaskRead> {
-    return this.api.get<ExtractionTaskRead>(`/extraction/tasks/${id}`);
+  listTasks(
+    params?: { task_type?: string; status?: string; limit?: number },
+    opts?: { silent?: boolean },
+  ): Observable<ExtractionTaskRead[]> {
+    return this.api.get<ExtractionTaskRead[]>('/extraction/tasks', params, opts);
+  }
+
+  getTask(id: string, opts?: { silent?: boolean }): Observable<ExtractionTaskRead> {
+    return this.api.get<ExtractionTaskRead>(`/extraction/tasks/${id}`, undefined, opts);
   }
 
   taskInstances(
@@ -43,6 +51,10 @@ export class ExtractionApi {
 
   taskRules(taskId: string): Observable<BusinessLogicRuleRead[]> {
     return this.api.get<BusinessLogicRuleRead[]>(`/extraction/tasks/${taskId}/rules`);
+  }
+
+  taskTopology(taskId: string): Observable<TopologyRead> {
+    return this.api.get<TopologyRead>(`/extraction/tasks/${taskId}/topology`);
   }
 
   instanceDetail(id: string): Observable<InstanceDetail> {

@@ -2,7 +2,8 @@ export type TaskType =
   | 'schema_induction'
   | 'instance_unstructured'
   | 'instance_structured'
-  | 'business_logic';
+  | 'business_logic'
+  | 'business_logic_topology';
 
 export type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed';
 
@@ -32,8 +33,14 @@ export interface StructuredExtractionRequest {
 }
 
 export interface BusinessLogicExtractionRequest {
-  schema_id: string;
+  ontology_model_id?: string | null;
+  schema_id?: string | null;
   file_ids: string[];
+  ai_config?: Record<string, unknown> | null;
+  model_id?: string | null;
+  schema_version?: number | null;
+  type_mapping?: Record<string, string[]> | null;
+  name?: string | null;
 }
 
 export interface InstanceRead {

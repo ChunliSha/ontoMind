@@ -1,0 +1,78 @@
+<div
+  class="topo-wrap"
+  #host
+  (pointerdown)="onCanvasDown($event, host)"
+  (pointermove)="onMove($event)"
+  (pointerup)="onUp()"
+  (pointerleave)="onUp()"
+  (wheel)="onWheel($event)">
+  <div class="topo-toolbar">
+    <button type="button" class="btn btn-ghost btn-sm" [class.active]="mode()==='select'" (click)="setMode('select')">选择 / 拖动</button>
+    <button type="button" class="btn btn-ghost btn-sm" [class.active]="mode()==='link'" (click)="setMode('link')">连线</button>
+    @if (mode() === 'link') {
+      <span class="hint">先点源节点，再点目标节点</span>
+      <select class="form-ctl" [value]="edgeLabel()" (change)="edgeLabel.set($any($event.target).value)">
+        <option value="">无标签</option>
+        <option value="是">是</option>
+        <option value="否">否</option>
+      </select>
+    }
+    <button type="button" class="btn btn-ghost btn-sm" (click)="fitView()">适应画布</button>
+    <button type="button" class="btn btn-ghost btn-sm fullscreen-btn" (click)="toggleFullscreen()">
+      <svg [lucideIcon]="fullscreen() ? 'minimize-2' : 'maximize-2'" [size]="14"></svg>
+      {{ fullscreen() ? '退出全屏' : '全屏' }}
+    </button>
+    <span class="hint">{{ fullscreen() ? 'Esc 退出全屏 · 点击卡片编辑属性 · ' : '' }}滚轮缩放 · 拖空白处平移 · 点击边可删除</span>
+  </div>
+  <div
+    class="fs-inspector"
+    [class.open]="fullscreen() && !!selectedId"
+    (pointerdown)="$event.stopPropagation()"
+    (wheel)="$event.stopPropagation()">
+    <ng-content></ng-content>
+  </div>
+  <svg class="topo-svg" [attr.viewBox]="'0 0 ' + viewportW() + ' ' + viewportH()">
+    <g [attr.transform]="'translate(' + panX() + ' ' + panY() + ') scale(' + scale() + ')'">
+      @for (edge of graph.edges; track trackEdge($index, edge)) {
+        <g class="topo-edge" (click)="onEdgeClick($event, edge)">
+          <path [attr.d]="edgePath(edge)" class="edge-hit" />
+          <path [attr.d]="edgePath(edge)" class="edge-line" marker-end="url(#arrow)" />
+          @if (edge.label) {
+            <g [attr.transform]="'translate(' + edgeLabelPos(edge).x + ' ' + edgeLabelPos(edge).y + ')'">
+              <rect x="-16" y="-11" width="32" height="20" rx="4" class="edge-badge" />
+              <text text-anchor="middle" dy="4" class="edge-text">{{ edge.label }}</text>
+            </g>
+          }
+        </g>
+      }
+      @for (node of graph.nodes; track trackNode($index, node)) {
+        <g
+          class="topo-node"
+          [class.selected]="selectedId === node.id"
+          [class.linking]="linkFrom() === node.id"
+          [class.ungrounded]="isUngrounded(node)"
+          [attr.transform]="'translate(' + nx(node) + ' ' + ny(node) + ')'"
+          (pointerdown)="onNodeDown($event, node, host)">
+          <rect
+            [attr.width]="nodeW()"
+            [attr.height]="nodeH()"
+            rx="12"
+            [attr.fill]="isUngrounded(node) ? '#FFE082' : (node.color || '#E5E7EB')"
+            class="node-rect" />
+          <foreignObject [attr.width]="nodeW()" [attr.height]="nodeH()">
+            <div class="node-card" xmlns="http://www.w3.org/1999/xhtml">
+              <div class="node-type">{{ node.type }}</div>
+              <div class="node-label">{{ node.label }}</div>
+              <div class="node-flag" [class.ok]="!isUngrounded(node)">{{ nodeSnippet(node) }}</div>
+            </div>
+          </foreignObject>
+        </g>
+      }
+    </g>
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+      </marker>
+    </defs>
+  </svg>
+</div>

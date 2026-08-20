@@ -6,6 +6,8 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel, Field
 
+from app.topology.logic_graph import LogicGraph
+
 T = TypeVar("T")
 
 
@@ -109,3 +111,9 @@ class LLMProvider(Protocol):
         schema_snapshot: SchemaSnapshot,
         instance_labels: list[str],
     ) -> AIResult[list[BusinessLogicRuleDraft]]: ...
+
+    async def extract_business_logic_topology(
+        self,
+        text: str,
+        catalog_by_class: dict[str, list[dict[str, str]]],
+    ) -> AIResult[LogicGraph]: ...

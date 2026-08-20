@@ -14,12 +14,10 @@ from app.ai import resolve_llm_provider
 from app.ai.base import SchemaSnapshot, SchemaSnapshotClass, SchemaSnapshotProperty
 from app.core.exceptions import AppError, ErrorCode
 from app.core.security import decrypt_password
-from app.db.session import AsyncSessionLocal
-from app.models.business_logic import BusinessLogicRule
+from app.db.session import session_scope
 from app.models.extraction import ExtractionTask
 from app.models.instance import InstanceDataValue, InstanceRelation, OntologyInstance
 from app.models.schema import OntologyClass, OntologyProperty
-from app.repositories.business_logic_repository import BusinessLogicRepository
 from app.repositories.class_repository import ClassRepository
 from app.repositories.db_source_repository import DbSourceRepository
 from app.repositories.file_repository import FileRepository
@@ -81,7 +79,6 @@ class ExtractionService:
         self.mapping_repo = MappingRepository()
         self.table_repo = TableRepository()
         self.db_repo = DbSourceRepository()
-        self.biz_repo = BusinessLogicRepository()
 
     async def _llm_for_task(self, session: AsyncSession, task: ExtractionTask):
         model_id = (task.input or {}).get("model_id")
@@ -225,11 +222,24 @@ class ExtractionService:
     async def run_business_logic(
         self, session: AsyncSession, body: BusinessLogicExtractionRequest
     ) -> TaskAccepted:
-        sid = parse_uuid(body.schema_id)
+        from app.services.ontology_model_service import OntologyModelService
+
+        om_id = None
+        version = body.schema_version
+        if body.ontology_model_id:
+            om = await OntologyModelService().get_orm(session, body.ontology_model_id)
+            sid = om.schema_id
+            version = om.schema_version
+            om_id = om.id
+        else:
+            sid = parse_uuid(body.schema_id or "")
+
         schema = await self.schema_repo.get_by_id(session, sid)
         if not schema:
             raise AppError(ErrorCode.GRAPH_001)
-        inst_count = await self.instance_repo.count_by_schema(session, sid)
+        inst_count = await self.instance_repo.count_by_schema(
+            session, sid, schema_version=version
+        )
         if inst_count < 1:
             raise AppError(ErrorCode.BIZLOGIC_001)
         files = await self.file_repo.list_by_ids(session, [parse_uuid(x) for x in body.file_ids])
@@ -237,16 +247,28 @@ class ExtractionService:
         if not ready:
             raise AppError(ErrorCode.FILE_004)
         running = await self.task_repo.find_running(
-            session, task_type="business_logic", schema_id=sid
+            session, task_type="business_logic_topology", schema_id=sid
         )
+        if not running:
+            running = await self.task_repo.find_running(
+                session, task_type="business_logic", schema_id=sid
+            )
         if running:
             raise AppError(ErrorCode.TASK_002)
 
         task = ExtractionTask(
-            task_type="business_logic",
+            task_type="business_logic_topology",
             status="pending",
             schema_id=sid,
-            input={"file_ids": body.file_ids, "ai_config": body.ai_config},
+            input={
+                "file_ids": body.file_ids,
+                "ai_config": body.ai_config,
+                "model_id": body.model_id,
+                "schema_version": version,
+                "type_mapping": body.type_mapping,
+                "name": body.name,
+                "ontology_model_id": str(om_id) if om_id else None,
+            },
         )
         task = await self.task_repo.create(session, task)
         await session.commit()
@@ -259,6 +281,24 @@ class ExtractionService:
         if not obj:
             raise AppError(ErrorCode.TASK_001)
         return _task_read(obj)
+
+    async def list_tasks(
+        self,
+        session: AsyncSession,
+        *,
+        task_type: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[ExtractionTaskRead]:
+        statuses: list[str] | None = None
+        if status in ("active", "running"):
+            statuses = ["pending", "running"]
+        elif status:
+            statuses = [status]
+        rows = await self.task_repo.list_by_schema(
+            session, task_type=task_type, status=statuses, limit=limit
+        )
+        return [_task_read(r) for r in rows]
 
     async def list_task_instances(
         self, session: AsyncSession, task_id: str, *, page: int = 1, page_size: int = 20
@@ -397,7 +437,7 @@ class ExtractionService:
     # ---- background runners ----
 
     async def _run_schema_induction(self, task_id: uuid.UUID) -> None:
-        async with AsyncSessionLocal() as session:
+        async with session_scope() as session:
             task = await self.task_repo.get_by_id(session, task_id)
             assert task and task.schema_id
             file_ids = [parse_uuid(x) for x in (task.input or {}).get("file_ids", [])]
@@ -480,7 +520,7 @@ class ExtractionService:
             )
 
     async def _run_unstructured(self, task_id: uuid.UUID) -> None:
-        async with AsyncSessionLocal() as session:
+        async with session_scope() as session:
             task = await self.task_repo.get_by_id(session, task_id)
             assert task and task.schema_id
             schema = await self.schema_repo.get_by_id(session, task.schema_id)
@@ -587,7 +627,7 @@ class ExtractionService:
             )
 
     async def _run_structured(self, task_id: uuid.UUID) -> None:
-        async with AsyncSessionLocal() as session:
+        async with session_scope() as session:
             task = await self.task_repo.get_by_id(session, task_id)
             assert task and task.schema_id
             schema = await self.schema_repo.get_by_id(session, task.schema_id)
@@ -801,44 +841,91 @@ class ExtractionService:
             )
 
     async def _run_business_logic(self, task_id: uuid.UUID) -> None:
-        async with AsyncSessionLocal() as session:
+        from app.services.topology_index_service import TopologyIndexService
+        from app.services.topology_service import TopologyService
+        from app.topology.logic_graph import LogicGraph
+        from app.topology.pipeline import (
+            build_from_logic,
+            catalog_for_prompt,
+            extract_logic_graphs,
+        )
+
+        async with session_scope() as session:
             task = await self.task_repo.get_by_id(session, task_id)
             assert task and task.schema_id
-            snapshot = await self._schema_snapshot(session, task.schema_id)
-            instances = await self.instance_repo.list_by_schema(session, task.schema_id, limit=100)
-            labels = [i.label for i in instances]
-            file_ids = [parse_uuid(x) for x in (task.input or {}).get("file_ids", [])]
+            payload = task.input or {}
+            schema_id = task.schema_id
+            schema_version = payload.get("schema_version")
+            file_ids = [parse_uuid(x) for x in payload.get("file_ids", [])]
             files = await self.file_repo.list_by_ids(session, file_ids)
             texts = [await self._load_file_text(session, f) for f in files]
-            await runner.update_task_progress(task_id, progress=30)
-            llm = await self._llm_for_task(session, task)
-            ai = await llm.extract_business_logic(texts, snapshot, labels)
-            if not ai.success or not ai.result:
-                raise RuntimeError(ai.error or "business logic extraction failed")
-            await runner.update_task_progress(task_id, progress=70)
-            rules = []
-            for draft in ai.result:
-                rules.append(
-                    BusinessLogicRule(
-                        schema_id=task.schema_id,
-                        rule_type=draft.type,
-                        description=draft.description,
-                        condition=draft.condition,
-                        consequence=draft.consequence,
-                        action_required=draft.action_required,
-                        severity=draft.severity,
-                        source_doc_id=files[0].id if files else None,
-                        extraction_task_id=task_id,
-                    )
-                )
-            await self.biz_repo.bulk_create(session, rules)
-            await session.commit()
-            await runner.update_task_progress(
-                task_id,
-                status="succeeded",
-                progress=100,
-                output_summary={"rules_created": len(rules)},
+            file_id_strs = [str(f.id) for f in files]
+            index = await TopologyIndexService().build_index(
+                session, str(schema_id), schema_version=schema_version
             )
+            if not index.instances:
+                raise RuntimeError("本体模型下没有实例，无法组合业务逻辑拓扑")
+            catalog = catalog_for_prompt(index, per_class_limit=40)
+            llm = await self._llm_for_task(session, task)
+            graph_name = payload.get("name") or ""
+            ontology_model_id = payload.get("ontology_model_id")
+
+        await runner.update_task_progress(task_id, progress=30)
+
+        async def extract(chunk: str, cat: dict) -> LogicGraph:
+            ai = await llm.extract_business_logic_topology(chunk, cat)
+            if not ai.success or not ai.result:
+                raise RuntimeError(ai.error or "业务逻辑拓扑抽取失败")
+            return ai.result
+
+        async def on_progress(pct: float) -> None:
+            await runner.update_task_progress(task_id, progress=pct)
+
+        logic = await extract_logic_graphs(
+            extract,
+            texts,
+            catalog,
+            on_progress=on_progress,
+            max_chunks=8,
+        )
+        await runner.update_task_progress(task_id, progress=75)
+        graph, warnings, stats = build_from_logic(logic, index, name=graph_name)
+        await runner.update_task_progress(task_id, progress=90)
+
+        async with session_scope() as session:
+            obj = await TopologyService().persist_extracted(
+                session,
+                schema_id=schema_id,
+                schema_version=index.schema_version,
+                task_id=task_id,
+                file_ids=file_id_strs,
+                graph=graph,
+                warnings=warnings,
+                stats=stats,
+                type_mapping={
+                    cls.label: [cls.id]
+                    for cls in index.classes.values()
+                },
+                name=graph.name,
+                description=graph.description,
+                ontology_model_id=ontology_model_id,
+            )
+            await session.commit()
+
+        await runner.update_task_progress(
+            task_id,
+            status="succeeded",
+            progress=100,
+            output_summary={
+                "topology_id": str(obj.id),
+                "node_count": obj.node_count,
+                "edge_count": obj.edge_count,
+                "grounded_ratio": (
+                    float(obj.grounded_ratio) if obj.grounded_ratio is not None else None
+                ),
+                "warning_count": len(warnings),
+            },
+        )
 
     async def _schema_snapshot(self, session: AsyncSession, schema_id: uuid.UUID) -> SchemaSnapshot:
         classes = await self.class_repo.list_by_schema(session, schema_id)

@@ -49,6 +49,7 @@ class DashboardService:
             "instance_unstructured": "非结构化实例抽取",
             "instance_structured": "结构化实例抽取",
             "business_logic": "业务逻辑抽取",
+            "business_logic_topology": "业务逻辑抽取",
         }
         for t in tasks:
             items.append(

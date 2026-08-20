@@ -2,14 +2,69 @@
   <div class="view-head">
     <p class="eyebrow">Module 03 · AI 辅助抽取</p>
     <h1>本体抽取</h1>
-    <p class="lead">从非结构化文档或结构化映射中抽取符合 Schema 的实例数据。点击上方步骤可随时单独查看。</p>
+    <p class="lead">从非结构化文档或结构化映射中抽取符合 Schema 的实例，并保存为可复用的本体模型（Schema + 实例）。</p>
   </div>
 
   <ui-seg-group
-    [options]="[{id:'unstruct',label:'非结构化抽取'},{id:'struct',label:'结构化抽取'}]"
+    [options]="[{id:'unstruct',label:'非结构化抽取'},{id:'struct',label:'结构化抽取'},{id:'models',label:'本体模型管理'}]"
     [value]="store.mode()"
     (valueChange)="store.setMode($any($event))" />
 
+  @if (store.mode() === 'models') {
+    <div class="panel" style="margin-top:16px;padding:18px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0;font-size:15px;">本体模型</h3>
+          <p class="hint" style="margin-top:6px;">本体模型 = 选定 Schema 版本 + 该版本下的实例。业务逻辑抽取将基于这里保存的模型落地节点。</p>
+        </div>
+        <button class="btn btn-primary" type="button" (click)="openCreateModel()">
+          <svg lucideIcon="plus" [size]="14"></svg>新建本体模型
+        </button>
+      </div>
+      <div class="table-wrap" style="margin-top:16px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>Schema</th>
+              <th>版本</th>
+              <th>类 / 实例</th>
+              <th>更新时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (m of store.ontologyModels(); track m.id) {
+              <tr>
+                <td class="cell-title">{{ m.name }}</td>
+                <td>{{ m.schema_name }}</td>
+                <td>v{{ m.schema_version }}</td>
+                <td>{{ m.class_count }} / {{ m.instance_count }}</td>
+                <td style="font-size:12px;color:var(--text-400);">{{ m.updated_at | date:'yyyy-MM-dd HH:mm' }}</td>
+                <td class="row-actions">
+                  <button class="btn btn-ghost btn-sm" type="button" (click)="store.useModelForExtraction(m)">去抽取实例</button>
+                  <button class="icon-btn" type="button" title="编辑" (click)="openEditModel(m)">
+                    <svg lucideIcon="pencil" [size]="14"></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="删除" (click)="removeModel(m)">
+                    <svg lucideIcon="trash-2" [size]="14"></svg>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6">
+                  <ui-empty-state title="暂无本体模型" desc="可在抽取完成后，将当前 Schema 版本与实例保存为本体模型。" />
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (store.mode() !== 'models') {
   <div class="step-grid" style="margin-top:16px;">
     @for (n of [1,2,3,4]; track n) {
       <button
@@ -58,6 +113,8 @@
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
               <button class="btn btn-secondary btn-sm" type="button" [disabled]="!store.schemaId()"
                 (click)="store.exportTtl(true)" title="导出当前版本 Schema + 实例为 TTL">导出 TTL</button>
+              <button class="btn btn-secondary btn-sm" type="button" [disabled]="!inv.total"
+                (click)="openSaveAsModel()" title="将当前 Schema 版本与实例保存为本体模型">保存为本体模型</button>
               <button class="btn btn-ghost btn-sm" type="button" (click)="store.showMergedPreview()" [disabled]="!inv.total">合并预览</button>
               <button class="btn btn-ghost btn-sm" type="button" [disabled]="!inv.total" (click)="confirmClear()">清空本版本</button>
             </div>
@@ -236,7 +293,7 @@
           [class.btn-primary]="store.previewView() === store.mode()"
           [class.btn-ghost]="store.previewView() !== store.mode()"
           type="button"
-          (click)="store.showModePreview(store.mode())">
+          (click)="store.showModePreview()">
           本模块结果
         </button>
         <button class="btn btn-sm"
@@ -307,6 +364,7 @@
       </div>
     }
   </div>
+  }
 </section>
 
 <ui-modal [open]="mappingOpen()" title="字段映射" (closed)="mappingOpen.set(false)" width="900px">
@@ -358,4 +416,37 @@
       <div class="node-detail-row"><span class="k">{{ r.property_label }}</span><span class="v">{{ r.object_label }}</span></div>
     }
   }
+</ui-modal>
+
+<ui-modal [open]="modelModalOpen()" [title]="editingModel() ? '编辑本体模型' : '新建本体模型'" (closed)="modelModalOpen.set(false)" width="560px">
+  <div class="form-grid" style="grid-template-columns:1fr;">
+    <label>名称
+      <input class="form-ctl" [(ngModel)]="draftName" placeholder="例如：电网缺陷运维本体模型" />
+    </label>
+    <label>说明
+      <textarea class="form-ctl textarea" rows="2" [(ngModel)]="draftDesc" placeholder="可选"></textarea>
+    </label>
+    @if (!editingModel()) {
+      <label>Schema
+        <select class="form-ctl" [ngModel]="draftSchemaId" (ngModelChange)="onDraftSchemaChange($event)">
+          <option value="" disabled>请选择 Schema</option>
+          @for (s of store.schemas(); track s.id) {
+            <option [value]="s.id">{{ s.name }} (v{{ s.version }})</option>
+          }
+        </select>
+      </label>
+      <label>Schema 版本
+        <select class="form-ctl" [ngModel]="draftVersion" (ngModelChange)="onDraftVersionChange(+$event)">
+          @for (v of draftVersions; track v) {
+            <option [ngValue]="v">v{{ v }}</option>
+          }
+        </select>
+      </label>
+      <p class="hint">该版本当前有 {{ draftInstanceCount }} 条实例。实例会随后续抽取变化，本体模型始终指向该 Schema 版本。</p>
+    }
+  </div>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="modelModalOpen.set(false)">取消</button>
+    <button class="btn btn-primary" type="button" [disabled]="!draftName.trim() || (!editingModel() && !draftSchemaId)" (click)="saveModel()">保存</button>
+  </div>
 </ui-modal>

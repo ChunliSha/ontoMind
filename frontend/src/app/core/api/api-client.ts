@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { SILENT_ERROR } from './silent-error';
 
 // 使用 127.0.0.1 而非 localhost：Windows 上 localhost 常解析为 ::1，
 // 而后端默认只监听 IPv4，会导致浏览器报「无法连接后端服务」。
@@ -11,8 +12,15 @@ export class ApiClient {
   private readonly http = inject(HttpClient);
   readonly baseUrl = API_BASE_URL;
 
-  get<T>(path: string, params?: Record<string, string | number | boolean | undefined | null>): Observable<T> {
-    return this.http.get<T>(`${this.baseUrl}${path}`, { params: this.toParams(params) });
+  get<T>(
+    path: string,
+    params?: Record<string, string | number | boolean | undefined | null>,
+    opts?: { silent?: boolean },
+  ): Observable<T> {
+    return this.http.get<T>(`${this.baseUrl}${path}`, {
+      params: this.toParams(params),
+      context: opts?.silent ? new HttpContext().set(SILENT_ERROR, true) : undefined,
+    });
   }
 
   post<T>(path: string, body?: unknown): Observable<T> {

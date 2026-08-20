@@ -9,22 +9,39 @@ import { BadgeComponent } from '../../../shared/ui/badge/badge.component';
 import { ModalComponent } from '../../../shared/ui/modal/modal.component';
 import { EmptyStateComponent } from '../../../shared/ui/empty-state/empty-state.component';
 import { TargetProperty, MappingRead } from '../../../core/models/mapping';
+import { OntologyModelRead } from '../../../core/models/ontology-model';
+import { SchemasApi } from '../../../core/api/schemas.api';
+import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
+import { LucideDynamicIcon } from '@lucide/angular';
 
 @Component({
   selector: 'app-instance-extraction-page',
   standalone: true,
-  imports: [FormsModule, RouterLink, DatePipe, SegGroupComponent, ProgressBarComponent, BadgeComponent, ModalComponent, EmptyStateComponent],
+  imports: [
+    FormsModule, RouterLink, DatePipe, SegGroupComponent, ProgressBarComponent,
+    BadgeComponent, ModalComponent, EmptyStateComponent, LucideDynamicIcon,
+  ],
   providers: [InstanceExtractionStore],
   templateUrl: './instance-extraction.page.html',
   styleUrl: './instance-extraction.page.scss',
 })
 export class InstanceExtractionPage implements OnInit {
   readonly store = inject(InstanceExtractionStore);
+  private readonly schemasApi = inject(SchemasApi);
+  private readonly confirm = inject(ConfirmDialogService);
   readonly mappingOpen = signal(false);
   readonly detailOpen = signal(false);
+  readonly modelModalOpen = signal(false);
+  readonly editingModel = signal<OntologyModelRead | null>(null);
   readonly dragSource = signal<string | null>(null);
   mapTableId = '';
   mapClassId = '';
+  draftName = '';
+  draftDesc = '';
+  draftSchemaId = '';
+  draftVersion: number | null = null;
+  draftVersions: number[] = [];
+  draftInstanceCount = 0;
 
   ngOnInit(): void { this.store.bootstrap(); }
 
@@ -96,5 +113,91 @@ export class InstanceExtractionPage implements OnInit {
     if (sourceType === 'structured_mapping') return '结构化';
     if (sourceType === 'manual') return '手工';
     return sourceType;
+  }
+
+  openCreateModel(): void {
+    this.editingModel.set(null);
+    this.draftName = '';
+    this.draftDesc = '';
+    this.draftSchemaId = this.store.schemaId();
+    this.draftVersion = this.store.inventoryVersion();
+    this.draftVersions = [];
+    this.draftInstanceCount = 0;
+    this.modelModalOpen.set(true);
+    if (this.draftSchemaId) this.onDraftSchemaChange(this.draftSchemaId);
+  }
+
+  openSaveAsModel(): void {
+    const schema = this.store.currentSchema();
+    const ver = this.store.inventoryVersion() ?? schema?.version ?? null;
+    this.editingModel.set(null);
+    this.draftName = schema ? `${schema.name} · v${ver ?? schema.version}` : '';
+    this.draftDesc = '';
+    this.draftSchemaId = this.store.schemaId();
+    this.draftVersion = ver;
+    this.draftInstanceCount = this.store.inventory()?.total ?? 0;
+    const versions = this.store.inventory()?.versions ?? [];
+    this.draftVersions = versions.length ? versions : (ver != null ? [ver] : []);
+    this.modelModalOpen.set(true);
+    this.store.setMode('models');
+  }
+
+  openEditModel(row: OntologyModelRead): void {
+    this.editingModel.set(row);
+    this.draftName = row.name;
+    this.draftDesc = row.description || '';
+    this.draftSchemaId = row.schema_id;
+    this.draftVersion = row.schema_version;
+    this.modelModalOpen.set(true);
+  }
+
+  onDraftSchemaChange(schemaId: string): void {
+    this.draftSchemaId = schemaId;
+    if (!schemaId) return;
+    this.schemasApi.instanceInventory(schemaId).subscribe({
+      next: (inv) => {
+        const versions = inv.versions.length ? inv.versions : [inv.schema_version];
+        this.draftVersions = versions;
+        const preferred = this.draftVersion && versions.includes(this.draftVersion)
+          ? this.draftVersion
+          : inv.filter_version ?? inv.schema_version;
+        this.onDraftVersionChange(preferred);
+      },
+    });
+  }
+
+  onDraftVersionChange(version: number): void {
+    this.draftVersion = version;
+    if (!this.draftSchemaId) return;
+    this.schemasApi.instanceInventory(this.draftSchemaId, version).subscribe({
+      next: (inv) => { this.draftInstanceCount = inv.total; },
+    });
+  }
+
+  saveModel(): void {
+    const name = this.draftName.trim();
+    if (!name) return;
+    const editing = this.editingModel();
+    if (editing) {
+      this.store.updateOntologyModel(editing.id, { name, description: this.draftDesc }, () => this.modelModalOpen.set(false));
+      return;
+    }
+    if (!this.draftSchemaId) return;
+    this.store.createOntologyModel({
+      name,
+      description: this.draftDesc,
+      schema_id: this.draftSchemaId,
+      schema_version: this.draftVersion,
+    }, () => this.modelModalOpen.set(false));
+  }
+
+  async removeModel(row: OntologyModelRead): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: '删除本体模型',
+      message: `确定删除「${row.name}」？不会删除 Schema 或实例，仅去掉这个命名入口。`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (ok) this.store.deleteOntologyModel(row.id);
   }
 }

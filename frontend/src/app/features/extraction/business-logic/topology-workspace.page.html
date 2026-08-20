@@ -1,0 +1,126 @@
+<section class="view active workspace-view">
+  <div class="ws-head">
+    <div>
+      <p class="eyebrow">Module 03 · AI 辅助抽取</p>
+      <h1>业务逻辑管理</h1>
+      <p class="lead">查看、编辑已抽取的业务逻辑拓扑。画布按实际卡片大小显示，可缩放、平移、挂载实例。</p>
+    </div>
+    <a class="btn btn-secondary" routerLink="/extraction/business-logic">
+      <svg lucideIcon="sparkles" [size]="14"></svg>去抽取
+    </a>
+  </div>
+
+  <div class="ws-body">
+    <aside class="ws-list">
+      <label>按本体模型筛选
+        <select [ngModel]="store.filterOntoModelId()" (ngModelChange)="store.setFilter($event)">
+          <option value="">全部</option>
+          @for (m of store.ontoModels(); track m.id) {
+            <option [value]="m.id">{{ m.name }}</option>
+          }
+        </select>
+      </label>
+      <div class="list-scroll">
+        @for (t of store.filteredTopologies(); track t.id) {
+          <div class="topo-item" [class.active]="store.topology()?.id === t.id">
+            <button type="button" class="topo-item-main" (click)="open(t.id)">
+              <b>{{ t.name || '未命名拓扑' }}</b>
+              <div class="hint">{{ store.ontoModelName(t.ontology_model_id) }}</div>
+              <div class="hint">{{ t.node_count }} 节点 · {{ t.edge_count }} 边 · 落地 {{ t.grounded_ratio ?? 0 }}%</div>
+              <div class="hint">{{ t.created_at | date:'yyyy-MM-dd HH:mm' }}</div>
+            </button>
+            <button class="icon-btn" type="button" title="删除" (click)="store.remove(t.id)">
+              <svg lucideIcon="trash-2" [size]="14"></svg>
+            </button>
+          </div>
+        } @empty {
+          <ui-empty-state title="还没有业务逻辑" desc="请先在业务逻辑抽取中完成一次抽取。">
+            <a class="btn btn-primary" routerLink="/extraction/business-logic">开始抽取</a>
+          </ui-empty-state>
+        }
+      </div>
+    </aside>
+
+    <div class="ws-canvas">
+      @if (store.topology(); as topo) {
+        <div class="canvas-meta">
+          <input class="name-input" [ngModel]="nameDraft || topo.name" (ngModelChange)="nameDraft = $event"
+            (focus)="syncName()" (blur)="onNameBlur()" />
+          <div class="hint">
+            {{ topo.node_count }} 节点 · {{ topo.edge_count }} 边 · 落地 {{ topo.grounded_ratio ?? 0 }}%
+            @if (store.ungroundedCount()) {
+              · <span class="custom-hint">{{ store.ungroundedCount() }} 个自定义节点</span>
+            }
+          </div>
+          <div class="canvas-actions">
+            <button class="btn btn-secondary btn-sm" type="button" (click)="canvas?.setFullscreen(true)">
+              <svg lucideIcon="maximize-2" [size]="14"></svg>全屏
+            </button>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="store.export()">
+              <svg lucideIcon="download" [size]="14"></svg>导出 JSON
+            </button>
+          </div>
+        </div>
+        @if (store.classLegend().length) {
+          <div class="legend">
+            @for (item of store.classLegend(); track item.type) {
+              <span class="legend-item" [class.custom]="item.custom">
+                <i [style.background]="item.color"></i>
+                {{ item.type }} · {{ item.count }}
+              </span>
+            }
+          </div>
+        }
+        @if (topo.warnings.length) {
+          <div class="warn-row">
+            @for (w of topo.warnings; track w.message) {
+              <ui-badge [variant]="warningVariant(w.level)">{{ w.message }}</ui-badge>
+            }
+          </div>
+        }
+        <div class="canvas-host">
+          <app-topology-canvas
+            variant="workspace"
+            [graph]="topo.graph"
+            [selectedId]="store.selectedNodeId()"
+            (selectedIdChange)="onSelectNode($event)"
+            (nodeMoved)="store.moveNode($event.id, $event.x, $event.y)"
+            (edgeAdded)="store.addEdge($event.sourceId, $event.targetId, $event.label)"
+            (edgeDeleted)="store.deleteEdge($event)">
+            <app-topology-inspector
+              [node]="store.selectedNode()"
+              [ungrounded]="store.isUngrounded()"
+              [candidates]="candidatesForSelected()"
+              [remountId]="remountId"
+              [saving]="store.saving()"
+              [closable]="true"
+              (remountIdChange)="remountId = $event"
+              (remount)="onRemount()"
+              (labelBlur)="onLabelBlur($event)"
+              (propBlur)="onPropBlur($event.key, $event.value)"
+              (close)="onSelectNode(null)" />
+          </app-topology-canvas>
+        </div>
+      } @else {
+        <div class="panel empty-main">
+          <ui-empty-state title="选择一份业务逻辑" desc="左侧列表中打开已抽取的拓扑，即可在大画布中查看和编辑。" />
+        </div>
+      }
+    </div>
+
+    <aside class="node-panel">
+      <app-topology-inspector
+        [node]="store.selectedNode()"
+        [ungrounded]="store.isUngrounded()"
+        [candidates]="candidatesForSelected()"
+        [remountId]="remountId"
+        [saving]="store.saving()"
+        [closable]="false"
+        (remountIdChange)="remountId = $event"
+        (remount)="onRemount()"
+        (labelBlur)="onLabelBlur($event)"
+        (propBlur)="onPropBlur($event.key, $event.value)"
+        (close)="onSelectNode(null)" />
+    </aside>
+  </div>
+</section>

@@ -5,9 +5,11 @@ import { FilesApi } from '../../../core/api/files.api';
 import { MappingsApi } from '../../../core/api/mappings.api';
 import { DbSourcesApi } from '../../../core/api/db-sources.api';
 import { LlmModelsApi } from '../../../core/api/llm-models.api';
+import { OntologyModelsApi } from '../../../core/api/ontology-models.api';
 import { SchemaRead, ClassRead } from '../../../core/models/schema';
 import { FileRead } from '../../../core/models/file';
 import { LlmModelRead } from '../../../core/models/llm';
+import { OntologyModelCreate, OntologyModelRead, OntologyModelUpdate } from '../../../core/models/ontology-model';
 import {
   ExtractionTaskRead,
   InstanceDetail,
@@ -56,9 +58,10 @@ export class InstanceExtractionStore {
   private readonly mappingsApi = inject(MappingsApi);
   private readonly dbApi = inject(DbSourcesApi);
   private readonly llmApi = inject(LlmModelsApi);
+  private readonly ontoApi = inject(OntologyModelsApi);
   private readonly toast = inject(ToastService);
 
-  readonly mode = signal<'unstruct' | 'struct'>('unstruct');
+  readonly mode = signal<'unstruct' | 'struct' | 'models'>('unstruct');
   readonly step = signal(1);
   /** Highest step the user has reached in this session (for done styling). */
   readonly maxReachedStep = signal(1);
@@ -145,6 +148,7 @@ export class InstanceExtractionStore {
   readonly links = signal<{ source: string; target: string; targetKind: 'instance_uri' | 'property'; targetPropertyId?: string | null }[]>([]);
   readonly mappings = signal<MappingRead[]>([]);
   readonly selectedMappingIds = signal<Set<string>>(new Set());
+  readonly ontologyModels = signal<OntologyModelRead[]>([]);
 
   bootstrap(): void {
     this.schemasApi.list({ page: 1, page_size: 100 }).subscribe({
@@ -166,6 +170,7 @@ export class InstanceExtractionStore {
         if (def) this.selectedModelId.set(def.id);
       },
     });
+    this.loadOntologyModels();
   }
 
   currentSchema(): SchemaRead | undefined {
@@ -182,12 +187,13 @@ export class InstanceExtractionStore {
       return;
     }
     if (n === 4) {
-      // Entering preview always shows the current submodule scope (not merged).
-      this.previewView.set(this.mode());
+      const mode = this.mode();
+      if (mode === 'models') return;
+      this.previewView.set(mode);
       this.previewClassId.set(null);
-      const bucket = this.mode() === 'struct' ? this.structPreview() : this.unstructPreview();
+      const bucket = mode === 'struct' ? this.structPreview() : this.unstructPreview();
       if (!bucket.instances.length) {
-        this.loadModePreview(this.mode(), false);
+        this.loadModePreview(mode, false);
       }
     }
 
@@ -200,8 +206,12 @@ export class InstanceExtractionStore {
     return !!this.schemaId();
   }
 
-  setMode(mode: 'unstruct' | 'struct'): void {
+  setMode(mode: 'unstruct' | 'struct' | 'models'): void {
     this.mode.set(mode);
+    if (mode === 'models') {
+      this.loadOntologyModels();
+      return;
+    }
     this.previewView.set(mode);
     this.previewClassId.set(null);
     this.goToStep(1);
@@ -215,7 +225,7 @@ export class InstanceExtractionStore {
     this.unstructPreview.set(emptyPreview());
     this.structPreview.set(emptyPreview());
     this.mergedPreview.set(emptyPreview());
-    this.previewView.set(this.mode());
+    this.previewView.set(this.mode() === 'struct' ? 'struct' : 'unstruct');
     this.previewClassId.set(null);
     this.task.set(null);
     this.schemasApi.classes(id).subscribe({ next: (c) => this.classes.set(c) });
@@ -359,7 +369,8 @@ export class InstanceExtractionStore {
   }
 
   /** Reload preview for one submodule from instance library (filtered by source_type). */
-  showModePreview(mode: 'unstruct' | 'struct' = this.mode()): void {
+  showModePreview(): void {
+    const mode = this.mode() === 'struct' ? 'struct' : 'unstruct';
     this.loadModePreview(mode, true);
   }
 
@@ -596,5 +607,48 @@ export class InstanceExtractionStore {
     const next = new Set(this.selectedMappingIds());
     if (next.has(id)) next.delete(id); else next.add(id);
     this.selectedMappingIds.set(next);
+  }
+
+  loadOntologyModels(): void {
+    this.ontoApi.list({ page: 1, page_size: 100 }).subscribe({
+      next: (r) => this.ontologyModels.set(r.items),
+    });
+  }
+
+  createOntologyModel(body: OntologyModelCreate, onDone?: () => void): void {
+    this.ontoApi.create(body).subscribe({
+      next: () => {
+        this.toast.success('本体模型已保存');
+        this.loadOntologyModels();
+        onDone?.();
+      },
+    });
+  }
+
+  updateOntologyModel(id: string, body: OntologyModelUpdate, onDone?: () => void): void {
+    this.ontoApi.update(id, body).subscribe({
+      next: () => {
+        this.toast.success('本体模型已更新');
+        this.loadOntologyModels();
+        onDone?.();
+      },
+    });
+  }
+
+  deleteOntologyModel(id: string): void {
+    this.ontoApi.remove(id).subscribe({
+      next: () => {
+        this.toast.success('本体模型已删除');
+        this.loadOntologyModels();
+      },
+    });
+  }
+
+  useModelForExtraction(model: OntologyModelRead): void {
+    this.setSchema(model.schema_id);
+    this.setInventoryVersion(model.schema_version);
+    this.setMode('unstruct');
+    this.goToStep(2);
+    this.toast.info(`已切换到「${model.name}」对应的 Schema v${model.schema_version}`);
   }
 }

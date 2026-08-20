@@ -54,7 +54,7 @@ DEFAULT_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.TASK_001: "抽取任务不存在",
     ErrorCode.TASK_002: "该任务正在执行，请勿重复触发",
     ErrorCode.GRAPH_001: "指定的 Schema 不存在",
-    ErrorCode.BIZLOGIC_001: "请先完成本体实例抽取，再进行业务逻辑抽取",
+    ErrorCode.BIZLOGIC_001: "请先完成实例抽取并保存本体模型，再进行业务逻辑抽取",
     ErrorCode.LLM_001: "模型配置不存在",
     ErrorCode.LLM_002: "模型名称已存在，请更换",
     ErrorCode.LLM_003: "模型连通性测试失败，请检查 API 地址、密钥与模型名",

@@ -1,0 +1,57 @@
+.biz-workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-top: 8px;
+}
+.biz-setup {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.biz-setup h4 { margin: 4px 0 0; font-size: 13px; }
+.biz-setup label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-500); }
+.biz-setup select, .biz-setup .form-ctl { width: 100%; }
+.extract-btn { width: 100%; justify-content: center; margin-top: 4px; }
+.biz-main { min-width: 0; }
+.hint { font-size: 12.5px; color: var(--text-400); line-height: 1.55; }
+.custom-hint { color: #b45309; font-weight: 600; }
+.file-pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
+.file-pick {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px;
+}
+.saved-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.saved-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%;
+  text-decoration: none;
+}
+.saved-item:hover, .saved-item.active { border-color: var(--accent); }
+.running-panel, .empty-main { padding: 24px; min-height: 360px; }
+.result-meta { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+.result-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.legend-item {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-600);
+}
+.legend-item i {
+  width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0,0,0,.08);
+}
+.legend-item.custom i { outline: 1px dashed #d97706; outline-offset: 1px; }
+.warn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.canvas-preview {
+  height: 420px;
+}
+.canvas-preview app-topology-canvas { height: 100%; }
+@media (max-width: 1100px) {
+  .biz-workspace { grid-template-columns: 1fr; }
+}

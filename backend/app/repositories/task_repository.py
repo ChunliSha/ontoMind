@@ -47,6 +47,7 @@ class TaskRepository:
         *,
         schema_id: uuid.UUID | None = None,
         task_type: str | None = None,
+        status: str | list[str] | None = None,
         limit: int = 20,
     ) -> list[ExtractionTask]:
         stmt = select(ExtractionTask)
@@ -54,6 +55,9 @@ class TaskRepository:
             stmt = stmt.where(ExtractionTask.schema_id == schema_id)
         if task_type:
             stmt = stmt.where(ExtractionTask.task_type == task_type)
+        if status:
+            statuses = [status] if isinstance(status, str) else status
+            stmt = stmt.where(ExtractionTask.status.in_(statuses))
         stmt = stmt.order_by(ExtractionTask.created_at.desc()).limit(limit)
         result = await session.execute(stmt)
         return list(result.scalars().all())

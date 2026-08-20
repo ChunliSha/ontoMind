@@ -4,6 +4,7 @@ import { catchError, throwError } from 'rxjs';
 import { ErrorResponse } from '../../models/common';
 import { FormErrorService } from '../../services/form-error.service';
 import { ToastService } from '../../services/toast.service';
+import { SILENT_ERROR } from '../silent-error';
 
 export const errorInterceptor: HttpInterceptorFn = (req, next) => {
   const toast = inject(ToastService);
@@ -11,6 +12,9 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(req).pipe(
     catchError((err: HttpErrorResponse) => {
+      if (req.context.get(SILENT_ERROR)) {
+        return throwError(() => err);
+      }
       const body = err.error as ErrorResponse | null;
       const detail = body?.error;
 

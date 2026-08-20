@@ -1,47 +1,163 @@
 <section class="view active">
-  <div class="view-head">
-    <p class="eyebrow">Module 03 · AI 辅助抽取</p>
-    <h1>业务逻辑抽取</h1>
-    <p class="lead">从业务文档中抽取因果与约束规则，导出为 JSON。</p>
+  <div class="view-head view-head-row">
+    <div>
+      <p class="eyebrow">Module 03 · AI 辅助抽取</p>
+      <h1>业务逻辑抽取</h1>
+      <p class="lead">基于已保存的本体模型理解文档中的业务逻辑，用模型里的实例组合成拓扑图。对不上的步骤会保留为自定义节点并高亮。</p>
+    </div>
+    <a class="btn btn-secondary" routerLink="/extraction/business-logic/workspace">
+      <svg lucideIcon="layout-dashboard" [size]="14"></svg>业务逻辑管理
+    </a>
   </div>
 
-  <div class="step-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
-    @for (n of [1,2,3,4]; track n) {
-      <div class="panel" style="padding:12px;" [style.borderColor]="store.step()===n ? 'var(--accent)' : null">
-        <b>Step {{ n }}</b> · {{ ['选择 Schema','选择文档','抽取中','结果'][n-1] }}
-      </div>
-    }
-  </div>
-
-  <div class="panel" style="padding:18px;">
-    @if (store.step() === 1) {
-      <label>Schema
-        <select [ngModel]="store.schemaId()" (ngModelChange)="store.schemaId.set($event)">
-          @for (s of store.schemas(); track s.id) { <option [value]="s.id">{{ s.name }}</option> }
+  <div class="biz-workspace">
+    <aside class="biz-setup">
+      <label>本体模型
+        <select [ngModel]="store.ontoModelId()" (ngModelChange)="store.setOntoModel($event)" [disabled]="store.extracting()">
+          <option value="" disabled>请选择已保存的本体模型</option>
+          @for (m of store.ontoModels(); track m.id) {
+            <option [value]="m.id">{{ m.name }} · {{ m.schema_name }} v{{ m.schema_version }}</option>
+          }
         </select>
       </label>
-      <div style="margin-top:14px;"><button class="btn btn-primary" type="button" (click)="store.step.set(2)">下一步</button></div>
-    }
-    @if (store.step() === 2) {
-      @for (f of store.files(); track f.id) {
-        <label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-          <input type="checkbox" [checked]="store.selectedFileIds().has(f.id)" (change)="store.toggleFile(f.id)" />
-          {{ f.name }}
-        </label>
-      } @empty { <ui-empty-state title="无可用文档" /> }
-      <div style="margin-top:14px;display:flex;gap:8px;">
-        <button class="btn btn-ghost" type="button" (click)="store.step.set(1)">上一步</button>
-        <button class="btn btn-primary" type="button" [disabled]="!store.selectedFileIds().size" (click)="store.start()">开始抽取</button>
+      @if (store.currentOntoModel(); as m) {
+        <p class="hint">{{ m.class_count }} 个类 · {{ m.instance_count }} 条实例，抽取时作为构图词汇表。</p>
+      } @else if (!store.ontoModels().length) {
+        <ui-empty-state title="还没有可用的本体模型" desc="请先在本体抽取中完成实例抽取，并保存为本体模型。">
+          <a class="btn btn-primary" routerLink="/extraction/instances">前往本体抽取</a>
+        </ui-empty-state>
+      }
+
+      <h4>业务文档</h4>
+      <div class="file-pick-list">
+        @for (f of store.files(); track f.id) {
+          <label class="file-pick">
+            <input type="checkbox" [checked]="store.selectedFileIds().has(f.id)" (change)="store.toggleFile(f.id)" [disabled]="store.extracting()" />
+            <span>{{ f.name }}</span>
+          </label>
+        } @empty {
+          <p class="hint">暂无已解析文档，请先在非结构化管理中上传。</p>
+        }
       </div>
-    }
-    @if (store.step() === 3) {
-      <ui-progress-bar [progress]="store.task()?.progress || 0" label="业务逻辑抽取" />
-    }
-    @if (store.step() === 4) {
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <button class="btn btn-secondary btn-sm" type="button" (click)="store.export()"><svg lucideIcon="download" [size]="14"></svg>导出文件</button>
-      </div>
-      <ui-code-block title="业务逻辑规则 JSON" [code]="store.jsonPreview()" />
-    }
+
+      <label>抽取模型
+        <select [ngModel]="store.selectedModelId()" (ngModelChange)="store.selectedModelId.set($event)" [disabled]="store.extracting()">
+          <option [ngValue]="null" disabled>请选择模型</option>
+          @for (m of store.models(); track m.id) {
+            <option [ngValue]="m.id">{{ m.name }}{{ m.is_default ? '（默认）' : '' }}</option>
+          }
+        </select>
+      </label>
+      @if (!store.models().length) {
+        <p class="hint">暂无可用模型，请先前往 <a routerLink="/models">模型管理</a> 配置。</p>
+      }
+
+      <button class="btn btn-primary extract-btn" type="button"
+        [disabled]="!store.canExtract()"
+        (click)="store.start()">
+        <svg lucideIcon="sparkles" [size]="14"></svg>
+        {{ store.topology() ? '重新抽取' : '开始抽取' }}
+      </button>
+
+      @if (store.topologies().length) {
+        <div class="saved-list">
+          <h4>已保存的拓扑</h4>
+          @for (t of store.topologies(); track t.id) {
+            <a class="saved-item" [class.active]="store.topology()?.id === t.id"
+              [routerLink]="['/extraction/business-logic/workspace']" [queryParams]="{id: t.id}">
+              <div>
+                <b>{{ t.name || '未命名拓扑' }}</b>
+                <div class="hint">{{ t.node_count }} 节点 · 落地 {{ t.grounded_ratio ?? 0 }}%</div>
+              </div>
+              <span class="hint">在大画布打开</span>
+            </a>
+          }
+        </div>
+      }
+    </aside>
+
+    <div class="biz-main">
+      @if (store.extracting()) {
+        <div class="panel running-panel">
+          <ui-progress-bar [progress]="store.task()?.progress || 0" [label]="store.progressLabel()" />
+          <p class="hint">正在用本体实例对齐文档中的业务步骤。可切换到其他模块，抽取会在后台继续，返回本页即可查看进度。</p>
+        </div>
+      } @else if (store.topology(); as topo) {
+        <div class="result-meta">
+          <div>
+            <b>{{ topo.name || '业务逻辑拓扑' }}</b>
+            <div class="hint">
+              {{ topo.node_count }} 节点 · {{ topo.edge_count }} 边 · 落地 {{ topo.grounded_ratio ?? 0 }}%
+              @if (store.ungroundedCount()) {
+                · <span class="custom-hint">{{ store.ungroundedCount() }} 个自定义节点待挂载</span>
+              }
+            </div>
+          </div>
+          <div class="result-actions">
+            <button class="btn btn-primary btn-sm" type="button" (click)="openFullscreen()">
+              <svg lucideIcon="maximize-2" [size]="14"></svg>全屏查看
+            </button>
+            <a class="btn btn-secondary btn-sm" [routerLink]="['/extraction/business-logic/workspace']" [queryParams]="{id: topo.id}">
+              去管理
+            </a>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="showJson = !showJson">
+              {{ showJson ? '查看预览' : '查看 JSON' }}
+            </button>
+            <button class="btn btn-secondary btn-sm" type="button" (click)="store.export()">
+              <svg lucideIcon="download" [size]="14"></svg>导出 JSON
+            </button>
+          </div>
+        </div>
+        @if (store.classLegend().length) {
+          <div class="legend">
+            @for (item of store.classLegend(); track item.type) {
+              <span class="legend-item" [class.custom]="item.custom">
+                <i [style.background]="item.color"></i>
+                {{ item.type }} · {{ item.count }}
+              </span>
+            }
+          </div>
+        }
+        @if (topo.warnings.length) {
+          <div class="warn-row">
+            @for (w of topo.warnings; track w.message) {
+              <ui-badge [variant]="warningVariant(w.level)">{{ w.message }}</ui-badge>
+            }
+          </div>
+        }
+        @if (showJson) {
+          <ui-code-block title="拓扑 JSON" [code]="store.jsonPreview()" />
+        } @else {
+          <div class="canvas-preview">
+            <app-topology-canvas
+              [graph]="topo.graph"
+              [selectedId]="store.selectedNodeId()"
+              (selectedIdChange)="onSelectNode($event)"
+              (nodeMoved)="store.moveNode($event.id, $event.x, $event.y)"
+              (edgeAdded)="store.addEdge($event.sourceId, $event.targetId, $event.label)"
+              (edgeDeleted)="store.deleteEdge($event)">
+              <app-topology-inspector
+                [node]="store.selectedNode()"
+                [ungrounded]="store.isUngrounded()"
+                [candidates]="store.remountCandidates()"
+                [remountId]="remountId"
+                [saving]="store.saving()"
+                [closable]="true"
+                (remountIdChange)="remountId = $event"
+                (remount)="onRemount()"
+                (labelBlur)="onLabelBlur($event)"
+                (propBlur)="onPropBlur($event.key, $event.value)"
+                (close)="onSelectNode(null)" />
+            </app-topology-canvas>
+          </div>
+        }
+      } @else {
+        <div class="panel empty-main">
+          <ui-empty-state
+            title="用实例组合业务逻辑"
+            desc="在左侧选择本体模型和文档后开始抽取。系统会阅读文档，把步骤落到已有实例上；找不到的步骤会高亮为自定义节点，可稍后挂载。" />
+        </div>
+      }
+    </div>
   </div>
 </section>

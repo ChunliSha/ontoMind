@@ -1,21 +1,28 @@
-"""In-process asyncio task runner for extraction_task (§7.5)."""
+"""In-process extraction runner. Heavy jobs run on a dedicated thread/loop
+so FastAPI request handling stays responsive.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import (
+    clear_worker_sessionmaker,
+    create_worker_sessionmaker,
+    session_scope,
+    set_worker_sessionmaker,
+)
 from app.models.extraction import ExtractionTask
 
 logger = logging.getLogger(__name__)
 
-# task_id -> asyncio.Task
-_running: dict[uuid.UUID, asyncio.Task] = {}
+_running: dict[uuid.UUID, threading.Thread] = {}
 
 
 async def update_task_progress(
@@ -26,7 +33,7 @@ async def update_task_progress(
     output_summary: dict | None = None,
     error_message: str | None = None,
 ) -> None:
-    async with AsyncSessionLocal() as session:
+    async with session_scope() as session:
         task = await session.get(ExtractionTask, task_id)
         if not task:
             return
@@ -63,7 +70,26 @@ async def _wrap(
         _running.pop(task_id, None)
 
 
+async def _isolated(task_id: uuid.UUID, coro_factory: Callable[[uuid.UUID], Awaitable[None]]) -> None:
+    engine, sm = create_worker_sessionmaker()
+    set_worker_sessionmaker(sm)
+    try:
+        await _wrap(task_id, coro_factory)
+    finally:
+        clear_worker_sessionmaker()
+        await engine.dispose()
+
+
 def spawn(task_id: uuid.UUID, coro_factory: Callable[[uuid.UUID], Awaitable[None]]) -> None:
-    """Fire-and-forget asyncio.create_task."""
-    t = asyncio.create_task(_wrap(task_id, coro_factory), name=f"extraction-{task_id}")
+    """Run extraction off the API event loop (dedicated thread + engine)."""
+
+    def thread_main() -> None:
+        asyncio.run(_isolated(task_id, coro_factory))
+
+    t = threading.Thread(
+        target=thread_main,
+        name=f"extraction-{task_id}",
+        daemon=True,
+    )
     _running[task_id] = t
+    t.start()
