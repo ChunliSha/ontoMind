@@ -80,6 +80,40 @@ class ExtractionService:
         self.table_repo = TableRepository()
         self.db_repo = DbSourceRepository()
 
+    async def _adopt_or_clear_running(
+        self,
+        session: AsyncSession,
+        *,
+        task_type: str,
+        schema_id: uuid.UUID | None,
+    ) -> uuid.UUID | None:
+        """Reuse a live in-process job, or fail a stale DB row left by a restart."""
+        running = await self.task_repo.find_running(
+            session, task_type=task_type, schema_id=schema_id
+        )
+        if not running:
+            return None
+        if runner.is_alive(running.id):
+            return running.id
+        self._mark_orphan_failed(running)
+        await session.flush()
+        return None
+
+    async def _supersede_running(self, session: AsyncSession, task_id: uuid.UUID) -> None:
+        """Stop a live job so a newly requested extraction can start cleanly."""
+        runner.request_cancel(task_id)
+        row = await self.task_repo.get_by_id(session, task_id)
+        if row and row.status in ("pending", "running"):
+            row.status = "failed"
+            row.error_message = runner.CANCEL_MESSAGE
+            row.finished_at = datetime.now(timezone.utc)
+            await session.flush()
+
+    def _mark_orphan_failed(self, task: ExtractionTask) -> None:
+        task.status = "failed"
+        task.error_message = "任务进程已丢失，已自动中断"
+        task.finished_at = datetime.now(timezone.utc)
+
     async def _llm_for_task(self, session: AsyncSession, task: ExtractionTask):
         model_id = (task.input or {}).get("model_id")
         return await resolve_llm_provider(session, model_id)
@@ -112,11 +146,11 @@ class ExtractionService:
         ready = [f for f in files if f.status == "ready"]
         if not ready:
             raise AppError(ErrorCode.FILE_004)
-        running = await self.task_repo.find_running(
+        existing = await self._adopt_or_clear_running(
             session, task_type="schema_induction", schema_id=sid
         )
-        if running:
-            raise AppError(ErrorCode.TASK_002)
+        if existing:
+            return TaskAccepted(task_id=str(existing))
 
         task = ExtractionTask(
             task_type="schema_induction",
@@ -148,11 +182,11 @@ class ExtractionService:
         ready = [f for f in files if f.status == "ready"]
         if not ready:
             raise AppError(ErrorCode.FILE_004)
-        running = await self.task_repo.find_running(
+        existing = await self._adopt_or_clear_running(
             session, task_type="instance_unstructured", schema_id=sid
         )
-        if running:
-            raise AppError(ErrorCode.TASK_002)
+        if existing:
+            await self._supersede_running(session, existing)
 
         task = ExtractionTask(
             task_type="instance_unstructured",
@@ -201,11 +235,11 @@ class ExtractionService:
                 )
             mappings.append(m)
 
-        running = await self.task_repo.find_running(
+        existing = await self._adopt_or_clear_running(
             session, task_type="instance_structured", schema_id=sid
         )
-        if running:
-            raise AppError(ErrorCode.TASK_002)
+        if existing:
+            await self._supersede_running(session, existing)
 
         task = ExtractionTask(
             task_type="instance_structured",
@@ -246,15 +280,15 @@ class ExtractionService:
         ready = [f for f in files if f.status == "ready"]
         if not ready:
             raise AppError(ErrorCode.FILE_004)
-        running = await self.task_repo.find_running(
+        existing = await self._adopt_or_clear_running(
             session, task_type="business_logic_topology", schema_id=sid
         )
-        if not running:
-            running = await self.task_repo.find_running(
+        if not existing:
+            existing = await self._adopt_or_clear_running(
                 session, task_type="business_logic", schema_id=sid
             )
-        if running:
-            raise AppError(ErrorCode.TASK_002)
+        if existing:
+            return TaskAccepted(task_id=str(existing))
 
         task = ExtractionTask(
             task_type="business_logic_topology",
@@ -280,6 +314,22 @@ class ExtractionService:
         obj = await self.task_repo.get_by_id(session, parse_uuid(id))
         if not obj:
             raise AppError(ErrorCode.TASK_001)
+        if obj.status in ("pending", "running") and not runner.is_alive(obj.id):
+            self._mark_orphan_failed(obj)
+            await session.commit()
+        return _task_read(obj)
+
+    async def cancel_task(self, session: AsyncSession, id: str) -> ExtractionTaskRead:
+        obj = await self.task_repo.get_by_id(session, parse_uuid(id))
+        if not obj:
+            raise AppError(ErrorCode.TASK_001)
+        if obj.status not in ("pending", "running"):
+            return _task_read(obj)
+        runner.request_cancel(obj.id)
+        obj.status = "failed"
+        obj.error_message = runner.CANCEL_MESSAGE
+        obj.finished_at = datetime.now(timezone.utc)
+        await session.commit()
         return _task_read(obj)
 
     async def list_tasks(
@@ -298,7 +348,19 @@ class ExtractionService:
         rows = await self.task_repo.list_by_schema(
             session, task_type=task_type, status=statuses, limit=limit
         )
-        return [_task_read(r) for r in rows]
+        live: list[ExtractionTask] = []
+        dirty = False
+        only_active = bool(statuses) and set(statuses) <= {"pending", "running"}
+        for r in rows:
+            if r.status in ("pending", "running") and not runner.is_alive(r.id):
+                self._mark_orphan_failed(r)
+                dirty = True
+                if only_active:
+                    continue
+            live.append(r)
+        if dirty:
+            await session.commit()
+        return [_task_read(r) for r in live]
 
     async def list_task_instances(
         self, session: AsyncSession, task_id: str, *, page: int = 1, page_size: int = 20
@@ -550,6 +612,11 @@ class ExtractionService:
             ok, fail = 0, 0
             total = max(len(files), 1)
             llm = await self._llm_for_task(session, task)
+            await runner.update_task_progress(
+                task_id,
+                progress=3,
+                output_summary={"stage": "准备文档与本体，即将调用模型…"},
+            )
 
             # Cross-document merge like extract/map_instances: (class, slug(label)) → one instance
             from app.ai.base import ExtractedInstance
@@ -559,13 +626,27 @@ class ExtractionService:
             file_names: list[str] = []
 
             for i, f in enumerate(files):
+                if runner.is_cancelled(task_id):
+                    raise runner.ExtractionCancelled(runner.CANCEL_MESSAGE)
                 try:
                     text_content = await self._load_file_text(session, f)
                     if not text_content.strip():
                         fail += 1
                         await runner.update_task_progress(task_id, progress=(i + 1) / total * 100)
                         continue
-                    ai = await llm.extract_instances([text_content], snapshot)
+                    await runner.update_task_progress(
+                        task_id,
+                        progress=min(90, 8 + i / total * 80),
+                        output_summary={
+                            "stage": (
+                                f"正在抽取「{f.name}」（{i + 1}/{len(files)}）："
+                                "实体识别 → 关系抽取 → 三元组，模型调用可能需要数分钟"
+                            ),
+                        },
+                    )
+                    ai = await llm.extract_instances([text_content], snapshot, task_id=task_id)
+                    if runner.is_cancelled(task_id):
+                        raise runner.ExtractionCancelled(runner.CANCEL_MESSAGE)
                     if not ai.success or not ai.result:
                         fail += 1
                         logger.warning("unstructured extract failed for %s: %s", f.id, ai.error)
@@ -592,11 +673,15 @@ class ExtractionService:
                                 if (r.property_label, r.target_instance_label) not in seen_rel:
                                     existing.relations.append(r)
                     ok += 1
+                except runner.ExtractionCancelled:
+                    raise
                 except Exception:  # noqa: BLE001
                     logger.exception("file %s extraction failed", f.id)
                     fail += 1
                 await runner.update_task_progress(task_id, progress=(i + 1) / total * 100)
 
+            if runner.is_cancelled(task_id):
+                raise runner.ExtractionCancelled(runner.CANCEL_MESSAGE)
             if merged:
                 await self._persist_extracted(
                     session,

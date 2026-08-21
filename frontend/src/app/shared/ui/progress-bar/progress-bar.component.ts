@@ -8,14 +8,14 @@ import { DecimalPipe } from '@angular/common';
   template: `
     <div class="progress-wrap">
       <div class="progress-meta"><span>{{ label }}</span><span>{{ clamped | number:'1.0-0' }}%</span></div>
-      <div class="progress-track"><div class="progress-fill" [style.width.%]="clamped"></div></div>
+      <div class="progress-track"><div class="progress-fill" [style.width]="clamped + '%'"></div></div>
     </div>
   `,
   styles: [`
     .progress-wrap { display:flex; flex-direction:column; gap:8px; }
     .progress-meta { display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-500); }
     .progress-track { height:8px; background:var(--neutral-soft); border-radius:99px; overflow:hidden; }
-    .progress-fill { height:100%; background:linear-gradient(90deg,var(--accent),var(--inst-c)); border-radius:99px; transition:width .25s ease; }
+    .progress-fill { height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--inst-c)); border-radius:99px; transition:width .25s ease; }
   `],
 })
 export class ProgressBarComponent {

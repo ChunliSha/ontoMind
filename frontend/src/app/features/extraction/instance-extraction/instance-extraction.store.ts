@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ExtractionApi } from '../../../core/api/extraction.api';
 import { SchemasApi } from '../../../core/api/schemas.api';
 import { FilesApi } from '../../../core/api/files.api';
@@ -20,7 +20,7 @@ import {
 import { MappingBinding, MappingRead, SourceField, TargetProperty } from '../../../core/models/mapping';
 import { DbSourceRead, DbTableRead } from '../../../core/models/db-source';
 import { ToastService } from '../../../core/services/toast.service';
-import { switchMap, takeWhile, timer } from 'rxjs';
+import { Subscription, switchMap, takeWhile, timer } from 'rxjs';
 
 type PreviewView = 'unstruct' | 'struct' | 'merged';
 
@@ -51,7 +51,7 @@ function statsFromInstances(items: InstanceRead[]): InstanceStat[] {
 }
 
 @Injectable()
-export class InstanceExtractionStore {
+export class InstanceExtractionStore implements OnDestroy {
   private readonly extraction = inject(ExtractionApi);
   private readonly schemasApi = inject(SchemasApi);
   private readonly filesApi = inject(FilesApi);
@@ -74,6 +74,7 @@ export class InstanceExtractionStore {
   readonly models = signal<LlmModelRead[]>([]);
   readonly selectedModelId = signal<string | null>(null);
   readonly replaceExisting = signal(true);
+  readonly cancelling = signal(false);
   /** In-flight / last polled task (step 3 progress). */
   readonly task = signal<ExtractionTaskRead | null>(null);
   /**
@@ -150,11 +151,18 @@ export class InstanceExtractionStore {
   readonly selectedMappingIds = signal<Set<string>>(new Set());
   readonly ontologyModels = signal<OntologyModelRead[]>([]);
 
+  ngOnDestroy(): void {
+    this.stopPolling();
+  }
+
   bootstrap(): void {
     this.schemasApi.list({ page: 1, page_size: 100 }).subscribe({
       next: (r) => {
-        this.schemas.set(r.items.filter((s) => s.status === 'published').concat(r.items));
-        if (r.items[0]) this.setSchema(r.items[0].id);
+        const published = r.items.filter((s) => s.status === 'published');
+        const rest = r.items.filter((s) => s.status !== 'published');
+        const ordered = [...published, ...rest];
+        this.schemas.set(ordered);
+        if (ordered[0]) this.setSchema(ordered[0].id);
       },
     });
     this.filesApi.list({ status: 'ready', page: 1, page_size: 100 }).subscribe({
@@ -199,6 +207,12 @@ export class InstanceExtractionStore {
 
     this.step.set(n);
     if (n > this.maxReachedStep()) this.maxReachedStep.set(n);
+    if (n === 3) {
+      const t = this.task();
+      if (t && !t.id) return;
+      if (t && (t.status === 'pending' || t.status === 'running')) return;
+      this.resumeActiveTask(this.schemaId());
+    }
   }
 
   canViewStep(n: number): boolean {
@@ -542,33 +556,105 @@ export class InstanceExtractionStore {
     this.unstructPreview.set(emptyPreview());
     this.previewView.set('unstruct');
     this.previewClassId.set(null);
+    this.beginFreshTask('instance_unstructured');
     this.extraction.startUnstructured({
       schema_id: this.schemaId(),
       file_ids: [...this.selectedFileIds()],
       model_id: this.selectedModelId(),
       replace_existing: this.replaceExisting(),
-    }).subscribe({ next: (t) => this.poll(t.task_id, 'unstruct') });
+    }).subscribe({
+      next: (t) => this.poll(t.task_id, 'unstruct'),
+      error: () => this.task.set(null),
+    });
   }
 
   startStructured(): void {
     this.structPreview.set(emptyPreview());
     this.previewView.set('struct');
     this.previewClassId.set(null);
+    this.beginFreshTask('instance_structured');
     this.extraction.startStructured({
       schema_id: this.schemaId(),
       mapping_ids: [...this.selectedMappingIds()],
-    }).subscribe({ next: (t) => this.poll(t.task_id, 'struct') });
+    }).subscribe({
+      next: (t) => this.poll(t.task_id, 'struct'),
+      error: () => this.task.set(null),
+    });
+  }
+
+  cancelTask(): void {
+    const t = this.task();
+    if (!t?.id || (t.status !== 'pending' && t.status !== 'running') || this.cancelling()) return;
+    this.cancelling.set(true);
+    this.extraction.cancelTask(t.id).subscribe({
+      next: (updated) => {
+        this.stopPolling();
+        this.task.set(updated);
+        this.cancelling.set(false);
+      },
+      error: () => {
+        this.cancelling.set(false);
+        this.toast.error('终止抽取失败');
+      },
+    });
+  }
+
+  private pollSub?: Subscription;
+  private pollingTaskId: string | null = null;
+  private taskEpoch = 0;
+
+  private beginFreshTask(taskType: ExtractionTaskRead['task_type']): void {
+    this.taskEpoch += 1;
+    this.stopPolling();
+    this.cancelling.set(false);
+    this.task.set({
+      id: '',
+      task_type: taskType,
+      status: 'pending',
+      progress: 0,
+      output_summary: { stage: '正在启动抽取…' },
+    });
+    this.goToStep(3);
+  }
+
+  private stopPolling(): void {
+    this.pollSub?.unsubscribe();
+    this.pollSub = undefined;
+    this.pollingTaskId = null;
+  }
+
+  private resumeActiveTask(schemaId: string): void {
+    const mode = this.mode();
+    if (mode === 'models' || !schemaId) return;
+    const taskType = mode === 'struct' ? 'instance_structured' : 'instance_unstructured';
+    const epoch = this.taskEpoch;
+    this.extraction.listTasks({ task_type: taskType, status: 'running', limit: 10 }, { silent: true }).subscribe({
+      next: (rows) => {
+        if (epoch !== this.taskEpoch) return;
+        const hit = rows.find((t) => t.schema_id === schemaId);
+        if (!hit) return;
+        const current = this.task();
+        if (current?.id === hit.id && (current.status === 'pending' || current.status === 'running')) {
+          return;
+        }
+        this.poll(hit.id, mode);
+      },
+    });
   }
 
   private poll(taskId: string, mode: 'unstruct' | 'struct'): void {
+    this.stopPolling();
+    this.pollingTaskId = taskId;
     this.goToStep(3);
-    timer(0, 400).pipe(
-      switchMap(() => this.extraction.getTask(taskId)),
+    this.pollSub = timer(0, 1000).pipe(
+      switchMap(() => this.extraction.getTask(taskId, { silent: true })),
       takeWhile((t) => t.status === 'pending' || t.status === 'running', true),
     ).subscribe({
       next: (t) => {
+        if (this.pollingTaskId !== taskId || (t.id && t.id !== taskId)) return;
         this.task.set(t);
         if (t.status === 'succeeded') {
+          this.pollingTaskId = null;
           const summary = t.output_summary as { succeeded?: number; failed?: number; schema_version?: number } | null;
           const ok = summary?.succeeded ?? 0;
           const fail = summary?.failed ?? 0;
@@ -593,7 +679,10 @@ export class InstanceExtractionStore {
             error: () => this.toast.error('抽取完成，但加载结果预览失败'),
           });
         } else if (t.status === 'failed') {
-          this.toast.error(t.error_message || '抽取失败');
+          this.pollingTaskId = null;
+          this.cancelling.set(false);
+          if (t.error_message === '用户已终止抽取') this.toast.info('已终止抽取');
+          else this.toast.error(t.error_message || '抽取失败');
         }
       },
     });

@@ -60,6 +60,11 @@ async def get_task(id: str, session: AsyncSession = Depends(get_session)):
     return await svc.get_task(session, id)
 
 
+@router.post("/extraction/tasks/{id}/cancel", response_model=ExtractionTaskRead)
+async def cancel_task(id: str, session: AsyncSession = Depends(get_session)):
+    return await svc.cancel_task(session, id)
+
+
 @router.get("/extraction/tasks/{id}/instances", response_model=PageResponse[InstanceRead])
 async def task_instances(
     id: str,

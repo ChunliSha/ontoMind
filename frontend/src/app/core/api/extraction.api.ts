@@ -42,6 +42,10 @@ export class ExtractionApi {
     return this.api.get<ExtractionTaskRead>(`/extraction/tasks/${id}`, undefined, opts);
   }
 
+  cancelTask(id: string): Observable<ExtractionTaskRead> {
+    return this.api.post<ExtractionTaskRead>(`/extraction/tasks/${id}/cancel`, {});
+  }
+
   taskInstances(
     taskId: string,
     params?: { page?: number; page_size?: number },

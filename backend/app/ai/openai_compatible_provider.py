@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -193,22 +194,30 @@ class OpenAICompatibleProvider:
         )
 
     async def extract_instances(
-        self, texts: list[str], schema_snapshot: SchemaSnapshot
+        self,
+        texts: list[str],
+        schema_snapshot: SchemaSnapshot,
+        task_id: uuid.UUID | None = None,
     ) -> AIResult[InstanceExtractionResult]:
         """Semantica pipeline (adapted from extract/populate_ontology.py)."""
         started = time.perf_counter()
         try:
+            from app.ai.extract_job import run_extract_cancellable
             from app.ai.populate_ontology_pipeline import extract_instances_sync
+            from app.tasks.runner import ExtractionCancelled
 
-            result = await asyncio.to_thread(
-                extract_instances_sync,
-                texts,
-                schema_snapshot,
-                provider="openai",
-                llm_model=self.model,
-                api_key=self.api_key or None,
-                base_url=self.api_base or None,
-            )
+            kwargs = {
+                "provider": "openai",
+                "llm_model": self.model,
+                "api_key": self.api_key or None,
+                "base_url": self.api_base or None,
+            }
+            if task_id is not None:
+                result = await asyncio.to_thread(
+                    run_extract_cancellable, task_id, texts, schema_snapshot, **kwargs
+                )
+            else:
+                result = await asyncio.to_thread(extract_instances_sync, texts, schema_snapshot, **kwargs)
             if not result.instances:
                 return AIResult(
                     success=False,
@@ -220,6 +229,8 @@ class OpenAICompatibleProvider:
                 result=result,
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
+        except ExtractionCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("extract_instances failed")
             return AIResult(

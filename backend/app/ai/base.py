@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Generic, Literal, Protocol, TypeVar
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -102,7 +103,7 @@ class LLMProvider(Protocol):
     ) -> AIResult[SchemaInductionResult]: ...
 
     async def extract_instances(
-        self, texts: list[str], schema_snapshot: SchemaSnapshot
+        self, texts: list[str], schema_snapshot: SchemaSnapshot, task_id: uuid.UUID | None = None
     ) -> AIResult[InstanceExtractionResult]: ...
 
     async def extract_business_logic(

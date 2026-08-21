@@ -21,14 +21,14 @@ logger = logging.getLogger("ontomind")
 
 
 async def _cleanup_orphan_tasks() -> None:
-    """Mark in-memory-lost `running` tasks as failed after process restart (§7.5 / P9)."""
+    """Mark in-memory-lost `pending`/`running` tasks as failed after process restart (§7.5 / P9)."""
 
 
     try:
         async with AsyncSessionLocal() as session:
             result = await session.execute(
                 update(ExtractionTask)
-                .where(ExtractionTask.status == "running")
+                .where(ExtractionTask.status.in_(("pending", "running")))
                 .values(
                     status="failed",
                     error_message="服务重启，进行中的任务已中断（孤儿任务清理）",

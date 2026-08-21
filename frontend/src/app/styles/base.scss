@@ -361,7 +361,7 @@
   .select-fake svg{width:14px; height:14px; color:var(--text-400);}
 
   .progress-track{height:6px; border-radius:4px; background:var(--neutral-soft); overflow:hidden; margin:12px 0;}
-  .progress-fill{height:100%; width:68%; background:linear-gradient(90deg,var(--accent),var(--inst-c)); border-radius:4px;}
+  .progress-fill{height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--inst-c)); border-radius:4px;}
 
   .mini-bar-row{display:flex; align-items:center; gap:10px; font-size:12px; margin-bottom:9px;}
   .mini-bar-row .lbl{width:56px; flex-shrink:0; color:var(--text-500); font-weight:600;}

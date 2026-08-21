@@ -10,6 +10,7 @@ import { ModalComponent } from '../../../shared/ui/modal/modal.component';
 import { EmptyStateComponent } from '../../../shared/ui/empty-state/empty-state.component';
 import { TargetProperty, MappingRead } from '../../../core/models/mapping';
 import { OntologyModelRead } from '../../../core/models/ontology-model';
+import { ExtractionTaskRead } from '../../../core/models/extraction';
 import { SchemasApi } from '../../../core/api/schemas.api';
 import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
 import { LucideDynamicIcon } from '@lucide/angular';
@@ -189,6 +190,15 @@ export class InstanceExtractionPage implements OnInit {
       schema_id: this.draftSchemaId,
       schema_version: this.draftVersion,
     }, () => this.modelModalOpen.set(false));
+  }
+
+  taskProgressLabel(t: ExtractionTaskRead): string {
+    const stage = t.output_summary?.['stage'];
+    if (typeof stage === 'string' && stage.trim()) return stage;
+    if (t.status === 'pending' || t.status === 'running') {
+      return '正在抽取（模型需依次做实体、关系、三元组，请稍候）';
+    }
+    return t.status || 'running';
   }
 
   async removeModel(row: OntologyModelRead): Promise<void> {
