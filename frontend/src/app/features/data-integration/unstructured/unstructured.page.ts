@@ -66,9 +66,18 @@ export class UnstructuredPage implements OnInit {
       });
     }
     if (action === 'delete') {
-      const ok = await this.confirm.confirm({ title: '删除文件', message: `确定删除「${file.name}」？`, danger: true, confirmText: '删除' });
-      if (ok) this.store.remove(file.id);
+      await this.confirmDelete(file);
     }
+  }
+
+  async confirmDelete(file: FileRead): Promise<void> {
+    const ok = await this.confirm.confirm({
+      title: '删除文件',
+      message: `确定删除「${file.name}」？将同时删除存储中的原文件及已生成的 Markdown，此操作不可恢复。`,
+      danger: true,
+      confirmText: '删除',
+    });
+    if (ok) this.store.remove(file.id);
   }
 
   saveRename(): void {

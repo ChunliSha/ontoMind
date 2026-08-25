@@ -10,10 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, ErrorCode
 from app.db.session import AsyncSessionLocal
+from app.models.business_logic import BusinessLogicRule
 from app.models.data_source import DataSourceFile, DataSourceTable, DataSourceTableColumn
 from app.repositories.db_source_repository import DbSourceRepository
 from app.repositories.file_repository import FileRepository
@@ -394,12 +397,28 @@ class FileService:
 
     async def delete(self, session: AsyncSession, id: str) -> None:
         obj = await self._get(session, id)
+        storage = get_storage(obj.storage_backend)
+        keys = [obj.storage_path, obj.standard_md_path, obj.ontology_md_path]
+        for key in keys:
+            if not key:
+                continue
+            try:
+                await storage.delete(key)
+            except Exception:  # noqa: BLE001
+                logger.warning("storage delete failed for %s key=%s", id, key)
+        await session.execute(
+            update(BusinessLogicRule)
+            .where(BusinessLogicRule.source_doc_id == obj.id)
+            .values(source_doc_id=None)
+        )
         try:
-            storage = get_storage(obj.storage_backend)
-            await storage.delete(obj.storage_path)
-        except Exception:  # noqa: BLE001
-            logger.warning("storage delete failed for %s", id)
-        await self.repo.delete(session, obj)
+            await self.repo.delete(session, obj)
+            await session.flush()
+        except IntegrityError as exc:
+            raise AppError(
+                ErrorCode.CONFLICT,
+                message="该文件仍被其他数据引用，无法删除",
+            ) from exc
 
     async def _get(self, session: AsyncSession, id: str) -> DataSourceFile:
         obj = await self.repo.get_by_id(session, parse_uuid(id))

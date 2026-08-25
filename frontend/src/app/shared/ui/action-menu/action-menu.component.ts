@@ -13,9 +13,9 @@ export interface ActionMenuItem { id: string; label: string; danger?: boolean; d
         <svg lucideIcon="more-horizontal" [size]="16"></svg>
       </button>
       @if (open) {
-        <div class="action-menu">
+        <div class="action-menu" [style.top.px]="menuTop" [style.right.px]="menuRight">
           @for (item of items; track item.id) {
-            <button type="button" [class.danger]="item.danger" [disabled]="item.disabled" (click)="pick(item)">{{ item.label }}</button>
+            <button type="button" [class.danger]="item.danger" [disabled]="item.disabled" (click)="pick(item, $event)">{{ item.label }}</button>
           }
         </div>
       }
@@ -24,7 +24,7 @@ export interface ActionMenuItem { id: string; label: string; danger?: boolean; d
   styles: [`
     .action-menu-wrap { position: relative; display: inline-block; }
     .action-menu {
-      position: absolute; right: 0; top: 100%; z-index: 20; min-width: 160px;
+      position: fixed; z-index: 80; min-width: 160px;
       background: var(--card); border: 1px solid var(--border); border-radius: var(--r-md);
       box-shadow: var(--shadow-md); padding: 6px; display: flex; flex-direction: column; gap: 2px;
     }
@@ -38,8 +38,19 @@ export class ActionMenuComponent {
   @Input() items: ActionMenuItem[] = [];
   @Output() action = new EventEmitter<string>();
   open = false;
-  toggle(e: MouseEvent): void { e.stopPropagation(); this.open = !this.open; }
-  pick(item: ActionMenuItem): void {
+  menuTop = 0;
+  menuRight = 0;
+  toggle(e: MouseEvent): void {
+    e.stopPropagation();
+    this.open = !this.open;
+    if (!this.open) return;
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const openUp = window.innerHeight - r.bottom < 240;
+    this.menuTop = openUp ? Math.max(8, r.top - 8 - this.items.length * 36) : r.bottom + 4;
+    this.menuRight = Math.max(8, window.innerWidth - r.right);
+  }
+  pick(item: ActionMenuItem, e: MouseEvent): void {
+    e.stopPropagation();
     if (item.disabled) return;
     this.open = false;
     this.action.emit(item.id);

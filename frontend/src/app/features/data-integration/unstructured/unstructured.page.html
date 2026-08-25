@@ -43,7 +43,12 @@
               <td>{{ f.storage_backend }}</td>
               <td><ui-badge [variant]="statusBadge(f.status)">{{ statusLabel(f.status) }}</ui-badge></td>
               <td style="font-family:var(--f-mono);font-size:11.5px;color:var(--text-400);">{{ f.updated_at | relativeTime }}</td>
-              <td><ui-action-menu [items]="menuItems" (action)="onAction(f, $event)" /></td>
+              <td class="row-actions">
+                <ui-action-menu [items]="menuItems" (action)="onAction(f, $event)" />
+                <button class="icon-btn" type="button" title="删除" (click)="confirmDelete(f)">
+                  <svg lucideIcon="trash-2" [size]="15"></svg>
+                </button>
+              </td>
             </tr>
           } @empty {
             <tr><td colspan="7"><ui-empty-state title="暂无文件" desc="拖拽或选择文件开始上传" /></td></tr>

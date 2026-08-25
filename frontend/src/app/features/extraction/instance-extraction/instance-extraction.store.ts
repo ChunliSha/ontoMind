@@ -1,4 +1,4 @@
-import { Injectable, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Injectable, NgZone, OnDestroy, computed, inject, signal } from '@angular/core';
 import { ExtractionApi } from '../../../core/api/extraction.api';
 import { SchemasApi } from '../../../core/api/schemas.api';
 import { FilesApi } from '../../../core/api/files.api';
@@ -20,7 +20,7 @@ import {
 import { MappingBinding, MappingRead, SourceField, TargetProperty } from '../../../core/models/mapping';
 import { DbSourceRead, DbTableRead } from '../../../core/models/db-source';
 import { ToastService } from '../../../core/services/toast.service';
-import { Subscription, switchMap, takeWhile, timer } from 'rxjs';
+import { Subscription, catchError, filter, of, switchMap, timer } from 'rxjs';
 
 type PreviewView = 'unstruct' | 'struct' | 'merged';
 
@@ -60,6 +60,7 @@ export class InstanceExtractionStore implements OnDestroy {
   private readonly llmApi = inject(LlmModelsApi);
   private readonly ontoApi = inject(OntologyModelsApi);
   private readonly toast = inject(ToastService);
+  private readonly zone = inject(NgZone);
 
   readonly mode = signal<'unstruct' | 'struct' | 'models'>('unstruct');
   readonly step = signal(1);
@@ -77,6 +78,22 @@ export class InstanceExtractionStore implements OnDestroy {
   readonly cancelling = signal(false);
   /** In-flight / last polled task (step 3 progress). */
   readonly task = signal<ExtractionTaskRead | null>(null);
+  readonly taskProgress = computed(() => {
+    const raw = this.task()?.progress as number | string | null | undefined;
+    const n = typeof raw === 'string' ? parseFloat(raw) : Number(raw ?? 0);
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+  });
+  readonly taskStage = computed(() => {
+    const t = this.task();
+    if (!t) return '';
+    const stage = t.output_summary?.['stage'];
+    if (typeof stage === 'string' && stage.trim()) return stage;
+    if (t.status === 'pending') return '正在启动抽取…';
+    if (t.status === 'running') return '正在抽取（模型需依次做实体、关系、三元组，请稍候）';
+    if (t.status === 'succeeded') return '抽取完成';
+    if (t.status === 'failed') return t.error_message || '抽取失败';
+    return t.status || '';
+  });
   /**
    * Result preview scope:
    * - unstruct / struct: that submodule only
@@ -589,7 +606,7 @@ export class InstanceExtractionStore implements OnDestroy {
     this.extraction.cancelTask(t.id).subscribe({
       next: (updated) => {
         this.stopPolling();
-        this.task.set(updated);
+        this.applyTask(updated);
         this.cancelling.set(false);
       },
       error: () => {
@@ -603,11 +620,15 @@ export class InstanceExtractionStore implements OnDestroy {
   private pollingTaskId: string | null = null;
   private taskEpoch = 0;
 
+  private applyTask(t: ExtractionTaskRead): void {
+    this.zone.run(() => this.task.set({ ...t, output_summary: t.output_summary ? { ...t.output_summary } : null }));
+  }
+
   private beginFreshTask(taskType: ExtractionTaskRead['task_type']): void {
     this.taskEpoch += 1;
     this.stopPolling();
     this.cancelling.set(false);
-    this.task.set({
+    this.applyTask({
       id: '',
       task_type: taskType,
       status: 'pending',
@@ -647,12 +668,16 @@ export class InstanceExtractionStore implements OnDestroy {
     this.pollingTaskId = taskId;
     this.goToStep(3);
     this.pollSub = timer(0, 1000).pipe(
-      switchMap(() => this.extraction.getTask(taskId, { silent: true })),
-      takeWhile((t) => t.status === 'pending' || t.status === 'running', true),
+      switchMap(() =>
+        this.extraction.getTask(taskId, { silent: true }).pipe(catchError(() => of(null))),
+      ),
+      filter((t): t is ExtractionTaskRead => !!t),
     ).subscribe({
       next: (t) => {
-        if (this.pollingTaskId !== taskId || (t.id && t.id !== taskId)) return;
-        this.task.set(t);
+        if (this.pollingTaskId !== taskId) return;
+        this.applyTask(t);
+        if (t.status === 'pending' || t.status === 'running') return;
+        this.stopPolling();
         if (t.status === 'succeeded') {
           this.pollingTaskId = null;
           const summary = t.output_summary as { succeeded?: number; failed?: number; schema_version?: number } | null;

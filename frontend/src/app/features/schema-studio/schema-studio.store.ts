@@ -51,8 +51,9 @@ export class SchemaStudioStore {
     this.filesApi.list({ page: 1, page_size: 100 }).subscribe({
       next: (r) => {
         this.sourceFiles.set(r.items);
-        const ready = new Set(r.items.filter((f) => f.status === 'ready').map((f) => f.id));
-        this.selectedFileIds.set(ready);
+        const valid = new Set(r.items.map((f) => f.id));
+        const kept = new Set([...this.selectedFileIds()].filter((id) => valid.has(id)));
+        this.selectedFileIds.set(kept);
       },
     });
   }

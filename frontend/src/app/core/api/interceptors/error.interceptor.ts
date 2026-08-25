@@ -23,7 +23,7 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       } else if (detail?.message) {
         toast.error(detail.message);
       } else if (err.status === 0) {
-        toast.error('无法连接后端服务，请确认 API 已启动（http://127.0.0.1:8000）');
+        toast.error('无法连接后端服务，请确认 API 已启动（本机 http://127.0.0.1:8000，局域网用同一主机的 :8000）');
       } else {
         toast.error(err.message || '请求失败');
       }

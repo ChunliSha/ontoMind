@@ -42,6 +42,11 @@ export class UnstructuredStore {
   }
 
   remove(id: string): void {
-    this.api.remove(id).subscribe({ next: () => { this.toast.success('已删除'); this.load(); } });
+    this.api.remove(id).subscribe({
+      next: () => {
+        this.items.set(this.items().filter((f) => f.id !== id));
+        this.toast.success('已删除');
+      },
+    });
   }
 }

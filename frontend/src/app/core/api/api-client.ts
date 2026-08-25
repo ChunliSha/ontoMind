@@ -1,11 +1,20 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpContext, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { SILENT_ERROR } from './silent-error';
 
-// 使用 127.0.0.1 而非 localhost：Windows 上 localhost 常解析为 ::1，
-// 而后端默认只监听 IPv4，会导致浏览器报「无法连接后端服务」。
-export const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+function resolveApiBaseUrl(): string {
+  // 本机用 127.0.0.1：Windows 上 localhost 常解析为 ::1，后端默认只听 IPv4。
+  // 局域网用当前页面主机名，这样其他电脑打开 http://<本机IP>:4200 时会打到同一台机器的 :8000。
+  const host =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : '127.0.0.1';
+  const apiHost = host === 'localhost' ? '127.0.0.1' : host;
+  return `http://${apiHost}:8000/api/v1`;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 @Injectable({ providedIn: 'root' })
 export class ApiClient {
@@ -31,8 +40,10 @@ export class ApiClient {
     return this.http.patch<T>(`${this.baseUrl}${path}`, body ?? {});
   }
 
-  delete<T>(path: string): Observable<T> {
-    return this.http.delete<T>(`${this.baseUrl}${path}`);
+  delete<T = void>(path: string): Observable<T> {
+    return this.http.delete(`${this.baseUrl}${path}`, { responseType: 'text' }).pipe(
+      map(() => undefined as T),
+    );
   }
 
   upload<T>(path: string, formData: FormData): Observable<T> {

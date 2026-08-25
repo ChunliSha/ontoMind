@@ -251,32 +251,38 @@
     }
 
     @if (store.step() === 3) {
-      @if (store.task(); as t) {
-        <ui-progress-bar [progress]="t.progress || 0" [label]="taskProgressLabel(t)" />
+      @if (store.task()) {
+        <div class="extract-live-progress">
+          <div class="extract-stage-row">
+            <span class="extract-stage">{{ store.taskStage() }}</span>
+            <span class="extract-pct">{{ store.taskProgress() | number:'1.0-0' }}%</span>
+          </div>
+          <ui-progress-bar [progress]="store.taskProgress()" [label]="''" />
+        </div>
         <div style="margin-top:12px;font-size:13px;color:var(--text-500);">
-          @if (t.id) {
-            任务 {{ t.id.slice(0, 8) }} · {{ t.task_type }}
+          @if (store.task()?.id) {
+            任务 {{ store.task()!.id.slice(0, 8) }} · {{ store.task()!.task_type }}
           } @else {
             正在创建抽取任务…
           }
-          @if (t.error_message) {
-            <div style="color:var(--danger, #b91c1c);margin-top:8px;">{{ t.error_message }}</div>
+          @if (store.task()?.error_message) {
+            <div style="color:var(--danger, #b91c1c);margin-top:8px;">{{ store.task()!.error_message }}</div>
           }
         </div>
-        @if (t.status === 'pending' || t.status === 'running') {
+        @if (store.task()?.status === 'pending' || store.task()?.status === 'running') {
           <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-danger" type="button"
-              [disabled]="store.cancelling() || !t.id"
+              [disabled]="store.cancelling() || !store.task()?.id"
               (click)="store.cancelTask()">
               <svg lucideIcon="square" [size]="14"></svg>
               {{ store.cancelling() ? '正在终止…' : '终止抽取' }}
             </button>
           </div>
         }
-        @if (t.status === 'succeeded' || t.status === 'failed') {
+        @if (store.task()?.status === 'succeeded' || store.task()?.status === 'failed') {
           <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-ghost" type="button" (click)="store.goToStep(2)">返回选择数据</button>
-            @if (t.status === 'succeeded') {
+            @if (store.task()?.status === 'succeeded') {
               <button class="btn btn-primary" type="button" (click)="store.goToStep(4)">查看结果预览</button>
             }
           </div>

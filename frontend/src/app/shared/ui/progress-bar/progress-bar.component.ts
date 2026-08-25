@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 
 @Component({
@@ -6,20 +6,33 @@ import { DecimalPipe } from '@angular/common';
   standalone: true,
   imports: [DecimalPipe],
   template: `
-    <div class="progress-wrap">
-      <div class="progress-meta"><span>{{ label }}</span><span>{{ clamped | number:'1.0-0' }}%</span></div>
-      <div class="progress-track"><div class="progress-fill" [style.width]="clamped + '%'"></div></div>
+    <div class="om-progress">
+      @if (label()) {
+        <div class="om-progress-meta">
+          <span>{{ label() }}</span>
+          <span>{{ pct() | number:'1.0-0' }}%</span>
+        </div>
+      }
+      <div class="om-progress-track">
+        <div class="om-progress-fill" [style.width.%]="pct()"></div>
+      </div>
     </div>
   `,
   styles: [`
-    .progress-wrap { display:flex; flex-direction:column; gap:8px; }
-    .progress-meta { display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-500); }
-    .progress-track { height:8px; background:var(--neutral-soft); border-radius:99px; overflow:hidden; }
-    .progress-fill { height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--inst-c)); border-radius:99px; transition:width .25s ease; }
+    :host { display: block; }
+    .om-progress { display: flex; flex-direction: column; gap: 8px; }
+    .om-progress-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--text-500); line-height: 1.45; }
+    .om-progress-meta span:first-child { flex: 1; min-width: 0; }
+    .om-progress-meta span:last-child { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+    .om-progress-track { height: 8px; background: var(--neutral-soft); border-radius: 99px; overflow: hidden; }
+    .om-progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--inst-c)); border-radius: 99px; transition: width .25s ease; }
   `],
 })
 export class ProgressBarComponent {
-  @Input() progress = 0;
-  @Input() label = '进度';
-  get clamped(): number { return Math.max(0, Math.min(100, Number(this.progress) || 0)); }
+  readonly progress = input(0);
+  readonly label = input('进度');
+  readonly pct = computed(() => {
+    const n = Number(this.progress());
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+  });
 }

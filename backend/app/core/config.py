@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     MINIO_ACCESS_KEY: str = ""
     MINIO_SECRET_KEY: str = ""
     MINIO_BUCKET: str = "ontomind"
+    # None = infer from MINIO_ENDPOINT scheme (https → true, otherwise false)
+    MINIO_SECURE: bool | None = None
     LLM_PROVIDER: str = "openai_compatible"  # openai_compatible
     LLM_API_BASE: str = ""
     LLM_API_KEY: str = ""
