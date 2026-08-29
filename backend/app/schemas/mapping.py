@@ -52,6 +52,10 @@ class MappingRead(BaseModel):
     schema_id: str
     class_id: str
     table_id: str
+    data_source_id: str | None = None
+    data_source_name: str | None = None
+    table_schema: str | None = None
+    table_name: str | None = None
     bindings: list[MappingBindingRead] = []
     created_at: datetime
     updated_at: datetime

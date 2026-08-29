@@ -1,0 +1,214 @@
+<section class="view active">
+  <div class="view-head">
+    <p class="eyebrow">Module 05 · 本体应用</p>
+    <div class="view-head-row">
+      <div>
+        <h1>MCP 服务</h1>
+        <p class="lead">管理 MCP API Key，并登记对外发布的 MCP 服务（关联本体与已发布 Tools）。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mcp-tabs">
+    <button
+      type="button"
+      class="btn"
+      [class.btn-primary]="tab() === 'keys'"
+      [class.btn-secondary]="tab() !== 'keys'"
+      (click)="onTab('keys')">
+      MCP API Key
+    </button>
+    <button
+      type="button"
+      class="btn"
+      [class.btn-primary]="tab() === 'services'"
+      [class.btn-secondary]="tab() !== 'services'"
+      (click)="onTab('services')">
+      MCP 服务列表
+    </button>
+  </div>
+
+  @if (tab() === 'keys') {
+    <div class="panel" style="margin-top:16px;padding:18px;">
+      <div class="panel-head" style="margin-bottom:12px;">
+        <h3>生成新 Key</h3>
+      </div>
+      <div class="toolbar" style="margin-bottom:12px;">
+        <label>名称
+          <input [ngModel]="keyName()" (ngModelChange)="keyName.set($event)" placeholder="例如：Cursor 本地 Agent" />
+        </label>
+        <button class="btn btn-primary" type="button" [disabled]="creatingKey()" (click)="createKey()">
+          <svg lucideIcon="key" [size]="15"></svg>{{ creatingKey() ? '生成中…' : '生成新 Key' }}
+        </button>
+      </div>
+      @if (revealedKey(); as created) {
+        <div class="key-reveal">
+          <div>
+            <strong>请立即复制完整 Key</strong>
+            <p>仅显示一次，关闭后无法再查看原文。调用 MCP 时使用 <code>Authorization: Bearer</code> 或 <code>X-API-Key</code>。</p>
+            <code class="key-value">{{ created.api_key }}</code>
+          </div>
+          <div class="key-reveal-actions">
+            <button class="btn btn-secondary btn-sm" type="button" (click)="copyKey()">复制</button>
+            <button class="btn btn-ghost btn-sm" type="button" (click)="revealedKey.set(null)">我已保存</button>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="panel" style="margin-top:14px;">
+      <div class="panel-head" style="padding:16px 16px 0;">
+        <h3>已有 Key</h3>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>前缀</th>
+              <th>创建时间</th>
+              <th>最近使用</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (k of keys(); track k.id) {
+              <tr>
+                <td class="cell-title">{{ k.name }}</td>
+                <td style="font-family:var(--f-mono);font-size:12px;">{{ k.key_prefix }}…</td>
+                <td style="font-size:12px;color:var(--text-400);">{{ k.created_at | date:'yyyy-MM-dd HH:mm' }}</td>
+                <td style="font-size:12px;color:var(--text-400);">{{ k.last_used_at ? (k.last_used_at | relativeTime) : '尚未使用' }}</td>
+                <td class="row-actions">
+                  <button class="icon-btn" type="button" title="删除" (click)="removeKey(k)">
+                    <svg lucideIcon="trash-2" [size]="14"></svg>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5">
+                  <ui-empty-state title="还没有 API Key" desc="生成后请妥善保存，完整密钥只展示一次。" />
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  @if (tab() === 'services') {
+    <div class="panel" style="margin-top:16px;padding:18px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0;font-size:15px;">MCP 服务</h3>
+          <p class="hint" style="margin-top:6px;">每个服务绑定一个本体。外部 Agent（Cursor）请使用「复制配置」，type 为 http。</p>
+        </div>
+        <button class="btn btn-primary" type="button" (click)="openCreateService()">
+          <svg lucideIcon="plus" [size]="14"></svg>新建
+        </button>
+      </div>
+      <div class="table-wrap" style="margin-top:16px;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>关联本体</th>
+              <th>链接地址</th>
+              <th>MCP 工具</th>
+              <th>描述</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (s of services(); track s.id) {
+              <tr>
+                <td class="cell-title">{{ s.name }}</td>
+                <td>{{ s.ontology_model_name || '—' }}</td>
+                <td style="font-family:var(--f-mono);font-size:11.5px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" [title]="clientUrl(s.ontology_model_id)">
+                  {{ clientUrl(s.ontology_model_id) }}
+                </td>
+                <td>
+                  @for (n of s.tool_names; track n) {
+                    <ui-badge variant="b-accent">{{ n }}</ui-badge>
+                  } @empty { — }
+                </td>
+                <td style="font-size:12.5px;color:var(--text-500);max-width:220px;">{{ s.description || '—' }}</td>
+                <td class="row-actions">
+                  <button class="icon-btn" type="button" title="编辑" (click)="openEditService(s)">
+                    <svg lucideIcon="pencil" [size]="14"></svg>
+                  </button>
+                  <button class="btn btn-ghost btn-sm" type="button" (click)="copyUrl(s)">
+                    <svg lucideIcon="copy" [size]="14"></svg>复制链接
+                  </button>
+                  <button class="btn btn-ghost btn-sm" type="button" (click)="copyCursorConfig(s)">
+                    <svg lucideIcon="file-text" [size]="14"></svg>复制配置
+                  </button>
+                  <button class="icon-btn" type="button" title="删除" (click)="removeService(s)">
+                    <svg lucideIcon="trash-2" [size]="14"></svg>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="6">
+                  <ui-empty-state title="暂无 MCP 服务" desc="点击「新建」登记一个对外服务。" />
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+</section>
+
+<ui-modal
+  [open]="modalOpen()"
+  [title]="editingId() ? '编辑 MCP 服务' : '新建 MCP 服务'"
+  (closed)="closeServiceModal()"
+  width="560px">
+  <div class="mcp-form">
+    <label>服务名称
+      <input [(ngModel)]="draftName" placeholder="例如：滨江变电站知识 MCP" />
+    </label>
+    <label>关联本体
+      <select [ngModel]="draftOntologyId" (ngModelChange)="onDraftOntologyChange($event)">
+        <option value="">请选择本体模型</option>
+        @for (m of models(); track m.id) {
+          <option [value]="m.id">{{ m.name }} · {{ m.schema_name }} v{{ m.schema_version }}</option>
+        }
+      </select>
+    </label>
+    <label>链接地址
+      <input [(ngModel)]="draftUrl" placeholder="http://host:8000/api/v1/mcp?ontology_id=..." />
+    </label>
+    <p class="hint">Cursor 使用 Streamable HTTP（type: http）连接此地址，不要填 /sse。</p>
+    <label>MCP 工具
+      <select [(ngModel)]="draftToolSelect" (ngModelChange)="onToolSelect($event)">
+        <option value="">选择已发布的 Tools 加入</option>
+        @for (t of tools(); track t.name) {
+          <option [value]="t.name" [disabled]="toolChecked(t.name)">{{ t.name }}</option>
+        }
+      </select>
+    </label>
+    <div class="picked-tools">
+      @for (n of draftTools(); track n) {
+        <button class="picked-tool" type="button" (click)="toggleTool(n, false)" title="移除">
+          {{ n }} <span>×</span>
+        </button>
+      } @empty {
+        <span class="hint">尚未选择工具</span>
+      }
+    </div>
+    <label>描述
+      <textarea rows="3" [(ngModel)]="draftDescription" placeholder="该服务对外提供的能力说明"></textarea>
+    </label>
+  </div>
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="closeServiceModal()">取消</button>
+    <button class="btn btn-primary" type="button" [disabled]="saving()" (click)="saveService()">
+      {{ saving() ? '保存中…' : (editingId() ? '保存' : '创建') }}
+    </button>
+  </div>
+</ui-modal>

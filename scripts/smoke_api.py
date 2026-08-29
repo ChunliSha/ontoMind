@@ -1,4 +1,4 @@
-"""End-to-end smoke test against a running OntoMind API."""
+"""End-to-end smoke test against a running KnowMind API."""
 
 from __future__ import annotations
 

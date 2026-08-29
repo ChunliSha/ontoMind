@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "滨江变电站知识问答MCP": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/api/v1/mcp?ontology_id=062c8a6b-b717-4868-982d-eb26f6603a08",
+      "headers": {
+        "X-API-Key": "omk_把完整Key粘贴在这里"
+      }
+    }
+  }
+}

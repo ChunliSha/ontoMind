@@ -18,16 +18,17 @@ export class GraphExplorerStore {
   readonly loading = signal(false);
   readonly search = signal('');
 
-  bootstrap(): void {
-    // TODO(spec-conflict): UCD prototype used a TTL file picker for graph input;
-    // product/API contract requires schema_id selector instead of uploading TTL here.
+  bootstrap(opts?: { schemaId?: string; nodeId?: string }): void {
     this.schemasApi.list({ page: 1, page_size: 100 }).subscribe({
       next: (r) => {
         this.schemas.set(r.items);
-        if (r.items[0]) {
+        const preferred = opts?.schemaId && r.items.find((s) => s.id === opts.schemaId);
+        if (preferred) {
+          this.schemaId.set(preferred.id);
+        } else if (r.items[0]) {
           this.schemaId.set(r.items[0].id);
-          this.reload();
         }
+        this.reload(opts?.nodeId);
       },
     });
   }
@@ -42,7 +43,7 @@ export class GraphExplorerStore {
     this.reload();
   }
 
-  reload(): void {
+  reload(selectNodeId?: string): void {
     const id = this.schemaId();
     if (!id) return;
     this.loading.set(true);
@@ -51,6 +52,13 @@ export class GraphExplorerStore {
         this.nodes.set(g.nodes || []);
         this.links.set(g.links || []);
         this.loading.set(false);
+        if (selectNodeId) {
+          const n = (g.nodes || []).find((x) => x.id === selectNodeId);
+          if (n) {
+            this.search.set(n.label);
+            this.selectNode(n);
+          }
+        }
       },
       error: () => {
         this.nodes.set([]);

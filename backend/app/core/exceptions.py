@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("ontomind")
 
 
 class ErrorCode(str, Enum):
@@ -31,6 +34,9 @@ class ErrorCode(str, Enum):
     LLM_001 = "LLM_001"
     LLM_002 = "LLM_002"
     LLM_003 = "LLM_003"
+    KNOWLEDGE_001 = "KNOWLEDGE_001"
+    KNOWLEDGE_002 = "KNOWLEDGE_002"
+    KNOWLEDGE_003 = "KNOWLEDGE_003"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     NOT_FOUND = "NOT_FOUND"
     CONFLICT = "CONFLICT"
@@ -58,6 +64,9 @@ DEFAULT_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.LLM_001: "模型配置不存在",
     ErrorCode.LLM_002: "模型名称已存在，请更换",
     ErrorCode.LLM_003: "模型连通性测试失败，请检查 API 地址、密钥与模型名",
+    ErrorCode.KNOWLEDGE_001: "本体模型不存在",
+    ErrorCode.KNOWLEDGE_002: "查询超出限制（条数、跳数、节点数或超时）",
+    ErrorCode.KNOWLEDGE_003: "无权访问该知识接口",
     ErrorCode.INTERNAL_ERROR: "服务器内部错误，请稍后重试",
     ErrorCode.NOT_FOUND: "资源不存在",
     ErrorCode.CONFLICT: "资源状态冲突",
@@ -85,6 +94,9 @@ HTTP_STATUS_BY_CODE: dict[ErrorCode, int] = {
     ErrorCode.LLM_001: 404,
     ErrorCode.LLM_002: 409,
     ErrorCode.LLM_003: 400,
+    ErrorCode.KNOWLEDGE_001: 404,
+    ErrorCode.KNOWLEDGE_002: 400,
+    ErrorCode.KNOWLEDGE_003: 401,
     ErrorCode.INTERNAL_ERROR: 500,
     ErrorCode.NOT_FOUND: 404,
     ErrorCode.CONFLICT: 409,
@@ -151,7 +163,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
 
     @app.exception_handler(Exception)
-    async def unhandled_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    async def unhandled_handler(_request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("unhandled error: %s", exc)
         return JSONResponse(
             status_code=500,
             content={

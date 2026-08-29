@@ -10,5 +10,7 @@ export const routes: Routes = [
   { path: 'extraction/business-logic/workspace', loadComponent: () => import('./features/extraction/business-logic/topology-workspace.page').then(m => m.TopologyWorkspacePage) },
   { path: 'extraction/business-logic', loadComponent: () => import('./features/extraction/business-logic/business-logic.page').then(m => m.BusinessLogicPage) },
   { path: 'graph', loadComponent: () => import('./features/graph-explorer/graph-explorer.page').then(m => m.GraphExplorerPage) },
+  { path: 'ontology-app/qa', loadComponent: () => import('./features/ontology-app/qa/qa.page').then(m => m.KnowledgeQaPage) },
+  { path: 'ontology-app/mcp', loadComponent: () => import('./features/ontology-app/mcp/mcp.page').then(m => m.McpPage) },
   { path: '**', redirectTo: '' },
 ];

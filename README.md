@@ -1,4 +1,4 @@
-# OntoMind · 本体抽取工作台
+# KnowMind · 本体抽取工作台
 
 基于 [OntoMind-软件开发指导文档.md](OntoMind-软件开发指导文档.md) 与 [frontendUCD.html](frontendUCD.html) 实现的全栈 MVP。
 
@@ -74,6 +74,8 @@ npm start
 | 本体抽取 | `/extraction/instances` | `/extraction/instances/*`、`/mappings` |
 | 业务逻辑抽取 | `/extraction/business-logic` | `/extraction/business-logic`、`/business-logic-rules` |
 | 图谱探索 | `/graph` | `/graph` |
+| 知识问答 | `/ontology-app/qa` | `/ontology-apps/qa`、`/knowledge/*` |
+| MCP 服务 | `/ontology-app/mcp` | `/mcp/tools`、`python -m app.mcp` |
 
 ## 工程结构
 
@@ -100,3 +102,16 @@ $env:PYTHONPATH = (Get-Location).Path
 - 图谱工具栏使用 Schema 选择器（与原型 TTL 选择器的差异已标注 `TODO(spec-conflict)`）
 
 更细的阶段划分与验收标准见 [OntoMind-开发规划.md](OntoMind-开发规划.md)。
+
+## 本体应用：知识问答与 MCP
+
+只读 **Knowledge Service**（PostgreSQL）是问答与 MCP 的唯一知识出口，不引入 Jena/Fuseki。
+
+- REST：`/api/v1/knowledge/*`（schema / 实例检索 / 详情 / 关系 / 多跳 expand）
+- 问答：`POST /api/v1/ontology-apps/qa/sessions`，`POST /sessions/{id}/messages`
+- MCP stdio：在 `backend` 目录 `PYTHONPATH=. python -m app.mcp`（配置样例见 [backend/mcp.json.example](backend/mcp.json.example)）
+- MCP HTTP：`GET /api/v1/mcp/sse`，`POST /api/v1/mcp/rpc`；或 `python -m app.mcp --sse`（默认 `127.0.0.1:8765`）
+- 受限 SPARQL 子集（只读 SELECT）：`POST /api/v1/knowledge/sparql-subset`（禁止 UPDATE/OPTIONAL/全表扫描）
+
+迁移新增表：`knowledge_access_log`、`qa_session`、`qa_message`。请执行 `alembic upgrade head`。
+

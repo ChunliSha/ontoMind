@@ -192,11 +192,17 @@ class MappingService:
 
     @staticmethod
     def _to_read(obj: FieldMapping) -> MappingRead:
+        tbl = obj.table
+        ds = tbl.data_source if tbl is not None else None
         return MappingRead(
             id=str(obj.id),
             schema_id=str(obj.schema_id),
             class_id=str(obj.class_id),
             table_id=str(obj.table_id),
+            data_source_id=str(ds.id) if ds is not None else None,
+            data_source_name=ds.name if ds is not None else None,
+            table_schema=tbl.table_schema if tbl is not None else None,
+            table_name=tbl.table_name if tbl is not None else None,
             bindings=[
                 MappingBindingRead(
                     id=str(b.id),

@@ -41,7 +41,14 @@
         (nodeClick)="store.selectNode($event)" />
     </div>
     <div class="panel node-detail-panel">
-      <div class="panel-head"><h3>节点详情</h3></div>
+      <div class="panel-head">
+        <h3>节点详情</h3>
+        @if (store.detail()) {
+          <button class="btn btn-ghost btn-sm" type="button" (click)="copyNodeId()">
+            <svg lucideIcon="copy" [size]="14"></svg>复制 ID
+          </button>
+        }
+      </div>
       @if (store.detail(); as d) {
         <div id="node-detail-content">
           @for (f of d.fields; track f.key) {

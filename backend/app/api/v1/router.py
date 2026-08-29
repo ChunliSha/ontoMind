@@ -7,9 +7,12 @@ from app.api.v1.routers import (
     files,
     graph,
     instances,
+    knowledge,
     llm_models,
     mappings,
+    mcp,
     ontology_models,
+    qa,
     schemas,
     topology,
 )
@@ -26,3 +29,6 @@ api_router.include_router(topology.router)
 api_router.include_router(graph.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(llm_models.router)
+api_router.include_router(knowledge.router)
+api_router.include_router(qa.router)
+api_router.include_router(mcp.router)

@@ -35,6 +35,21 @@ class Settings(BaseSettings):
     LLM_MODEL: str = ""
     CORS_ORIGINS: str = "*"
 
+    # Knowledge Service / QA / MCP
+    KNOWLEDGE_DEFAULT_LIMIT: int = 20
+    KNOWLEDGE_MAX_LIMIT: int = 100
+    KNOWLEDGE_MAX_HOPS: int = 3
+    KNOWLEDGE_MAX_NODES: int = 200
+    KNOWLEDGE_TIMEOUT_S: float = 15.0
+    KNOWLEDGE_MAX_CONCURRENCY: int = 8
+    KNOWLEDGE_PGVECTOR: bool = False
+    QA_TIMEOUT_S: float = 90.0
+    QA_MAX_TOOL_STEPS: int = 4
+    MCP_API_KEY: str = ""
+    MCP_BIND_HOST: str = "127.0.0.1"
+    MCP_PORT: int = 8765
+    MCP_REQUIRE_API_KEY: bool = False
+
     @property
     def local_storage_path(self) -> Path:
         root = Path(self.LOCAL_STORAGE_ROOT)

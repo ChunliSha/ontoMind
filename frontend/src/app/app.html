@@ -3,7 +3,7 @@
     <div class="brand">
       <div class="brand-mark"><svg lucideIcon="git-branch" [size]="18"></svg></div>
       <div>
-        <div class="brand-name">OntoMind</div>
+        <div class="brand-name">KnowMind</div>
         <div class="brand-sub">知识建模辅助抽取工具</div>
       </div>
     </div>
@@ -48,6 +48,18 @@
       <a class="nav-item" routerLink="/graph" routerLinkActive="active">
         <span class="nav-num">04</span><svg lucideIcon="network" [size]="16"></svg><span>图谱探索</span>
       </a>
+
+      <div class="nav-group" [class.open]="appOpen()">
+        <div class="nav-group-title" (click)="appOpen.set(!appOpen())">
+          <span class="nav-num">05</span>
+          <svg lucideIcon="message-square" [size]="16"></svg><span>本体应用</span>
+          <svg lucideIcon="chevron-down" class="chev" [size]="14"></svg>
+        </div>
+        <div class="nav-subitems">
+          <a class="nav-item sub" routerLink="/ontology-app/qa" routerLinkActive="active"><span>知识问答</span></a>
+          <a class="nav-item sub" routerLink="/ontology-app/mcp" routerLinkActive="active"><span>MCP 服务</span></a>
+        </div>
+      </div>
     </nav>
 
     <div class="sidebar-foot">
@@ -61,7 +73,7 @@
 
   <main class="main">
     <header class="topbar">
-      <div class="crumb">OntoMind <svg lucideIcon="chevron-right" [size]="12"></svg> <b>{{ pageTitle() }}</b></div>
+      <div class="crumb">KnowMind <svg lucideIcon="chevron-right" [size]="12"></svg> <b>{{ pageTitle() }}</b></div>
       <div class="topbar-right">
         <div class="ws-pill"><svg lucideIcon="folder-git-2" [size]="14"></svg>电力设备本体项目</div>
         <div class="avatar-sm">沙</div>

@@ -1,7 +1,7 @@
 [project]
 name = "ontomind-backend"
 version = "0.1.0"
-description = "OntoMind ontology extraction backend"
+description = "KnowMind ontology extraction backend"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
@@ -20,6 +20,7 @@ dependencies = [
     "greenlet>=3.1.0",
     "pypinyin>=0.53.0",
     "minio>=7.2.0",
+    "mcp>=1.6.0,<2",
 ]
 
 [tool.pytest.ini_options]

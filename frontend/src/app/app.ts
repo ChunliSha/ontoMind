@@ -17,6 +17,8 @@ const TITLES: Record<string, string> = {
   '/extraction/business-logic': '业务逻辑抽取',
   '/extraction/business-logic/workspace': '业务逻辑管理',
   '/graph': '图谱探索',
+  '/ontology-app/qa': '知识问答',
+  '/ontology-app/mcp': 'MCP 服务',
 };
 
 @Component({
@@ -32,6 +34,7 @@ export class App {
 
   readonly dataOpen = signal(true);
   readonly extractOpen = signal(true);
+  readonly appOpen = signal(true);
 
   private readonly currentUrl = toSignal(
     this.router.events.pipe(
@@ -42,5 +45,5 @@ export class App {
     { initialValue: '/' },
   );
 
-  readonly pageTitle = computed(() => TITLES[this.currentUrl()] ?? 'OntoMind');
+  readonly pageTitle = computed(() => TITLES[this.currentUrl()] ?? 'KnowMind');
 }

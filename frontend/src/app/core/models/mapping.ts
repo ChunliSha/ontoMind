@@ -23,6 +23,10 @@ export interface MappingRead {
   schema_id: string;
   class_id: string;
   table_id: string;
+  data_source_id?: string | null;
+  data_source_name?: string | null;
+  table_schema?: string | null;
+  table_name?: string | null;
   bindings: MappingBinding[];
   updated_at?: string;
 }

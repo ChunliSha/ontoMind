@@ -94,11 +94,17 @@ export class InstanceExtractionPage implements OnInit {
   mappingLabel(m: MappingRead): string {
     const cls = this.store.classes().find((c) => c.id === m.class_id)?.label
       ?? m.class_id.slice(0, 8);
-    const table = this.store.tables().find((t) => t.id === m.table_id);
-    const tableName = table ? `${table.table_schema}.${table.table_name}` : m.table_id.slice(0, 8);
     const uriCol = m.bindings?.find((b) => b.target_kind === 'instance_uri')?.source_column;
     const uriHint = uriCol ? ` · URI=${uriCol}` : ' · 缺实例URI';
-    return `${cls} ← ${tableName}${uriHint}`;
+    return `${cls}${uriHint}`;
+  }
+
+  mappingOrigin(m: MappingRead): string {
+    const src = m.data_source_name?.trim() || '未知数据源';
+    const schema = (m.table_schema || '').trim();
+    const table = (m.table_name || '').trim();
+    const tableLabel = table ? (schema ? `${schema}.${table}` : table) : m.table_id.slice(0, 8);
+    return `数据源 ${src} · 表 ${tableLabel}`;
   }
 
   confirmDeleteMapping(id: string, ev: Event): void {

@@ -8,7 +8,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.data_source import DataSourceTable
 from app.models.mapping import FieldMapping, FieldMappingBinding
+
+_LOAD = (
+    selectinload(FieldMapping.bindings),
+    selectinload(FieldMapping.table).selectinload(DataSourceTable.data_source),
+)
 
 
 class MappingRepository:
@@ -16,7 +22,7 @@ class MappingRepository:
         result = await session.execute(
             select(FieldMapping)
             .where(FieldMapping.id == id)
-            .options(selectinload(FieldMapping.bindings))
+            .options(*_LOAD)
         )
         return result.scalar_one_or_none()
 
@@ -27,7 +33,7 @@ class MappingRepository:
         schema_id: uuid.UUID | None = None,
         class_id: uuid.UUID | None = None,
     ) -> list[FieldMapping]:
-        stmt = select(FieldMapping).options(selectinload(FieldMapping.bindings))
+        stmt = select(FieldMapping).options(*_LOAD)
         if schema_id:
             stmt = stmt.where(FieldMapping.schema_id == schema_id)
         if class_id:
@@ -41,7 +47,7 @@ class MappingRepository:
         result = await session.execute(
             select(FieldMapping)
             .where(FieldMapping.class_id == class_id, FieldMapping.table_id == table_id)
-            .options(selectinload(FieldMapping.bindings))
+            .options(*_LOAD)
         )
         return result.scalar_one_or_none()
 

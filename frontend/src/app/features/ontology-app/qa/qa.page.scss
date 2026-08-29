@@ -1,0 +1,93 @@
+.qa-split {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 14px;
+  margin-top: 14px;
+  min-height: 520px;
+}
+.qa-sessions {
+  display: flex;
+  flex-direction: column;
+  min-height: 520px;
+  padding: 0;
+  overflow: hidden;
+}
+.qa-sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.qa-sessions-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+.qa-session-list { flex: 1; overflow: auto; }
+.qa-session-empty {
+  padding: 24px 14px;
+  color: var(--text-400);
+  font-size: 13px;
+  text-align: center;
+}
+.qa-session-item {
+  position: relative;
+  padding: 10px 12px 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.qa-session-item:hover { background: #FAFBFD; }
+.qa-session-item.active { background: var(--accent-soft); }
+.qa-session-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-900);
+  padding-right: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qa-session-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-400);
+}
+.qa-session-actions {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  display: none;
+  gap: 2px;
+}
+.qa-session-item:hover .qa-session-actions,
+.qa-session-item.active .qa-session-actions { display: flex; }
+.qa-rename {
+  width: calc(100% - 52px);
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.qa-chat { display: flex; flex-direction: column; min-height: 520px; padding: 0; overflow: hidden; }
+.qa-thread { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.qa-composer {
+  display: flex; gap: 10px; align-items: flex-end;
+  padding: 12px 14px; border-top: 1px solid var(--border);
+}
+.qa-composer textarea { flex: 1; resize: none; min-height: 52px; }
+.bubble { max-width: 86%; }
+.bubble.user { align-self: flex-end; }
+.bubble.assistant { align-self: flex-start; }
+.bubble-role { font-size: 11px; color: var(--text-400); margin-bottom: 4px; }
+.bubble-body {
+  padding: 10px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.55;
+  white-space: pre-wrap; background: var(--accent-soft); color: var(--text-900);
+}
+.bubble.user .bubble-body { background: var(--ink-900); color: #fff; }
+@media (max-width: 960px) {
+  .qa-split { grid-template-columns: 1fr; }
+}

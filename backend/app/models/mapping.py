@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.data_source import DataSourceTable
 
 
 class FieldMapping(Base):
@@ -45,6 +46,7 @@ class FieldMapping(Base):
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
+    table: Mapped[DataSourceTable] = relationship()
     bindings: Mapped[list[FieldMappingBinding]] = relationship(
         back_populates="mapping", cascade="all, delete-orphan"
     )

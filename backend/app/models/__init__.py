@@ -11,8 +11,10 @@ from app.models.data_source import (
 )
 from app.models.extraction import ExtractionTask
 from app.models.instance import InstanceDataValue, InstanceRelation, OntologyInstance
+from app.models.knowledge import KnowledgeAccessLog, QaMessage, QaSession
 from app.models.llm import LlmModelConfig
 from app.models.mapping import FieldMapping, FieldMappingBinding
+from app.models.mcp import McpApiKey, McpService
 from app.models.schema import GraphCache, OntologyClass, OntologyProperty, OntologySchema
 
 __all__ = [
@@ -35,4 +37,9 @@ __all__ = [
     "BusinessLogicTopologyNode",
     "GraphCache",
     "LlmModelConfig",
+    "McpApiKey",
+    "McpService",
+    "KnowledgeAccessLog",
+    "QaSession",
+    "QaMessage",
 ]

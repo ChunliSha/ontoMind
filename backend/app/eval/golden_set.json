@@ -1,0 +1,49 @@
+[
+  {
+    "id": "q-lookup-transformer",
+    "question": "1号主变压器是什么？",
+    "intent": "lookup_entity",
+    "must_tools": ["search_instances"],
+    "entity_labels": ["1号主变压器"],
+    "empty_ok": false
+  },
+  {
+    "id": "q-attr-voltage",
+    "question": "1号主变压器的电压等级是多少？",
+    "intent": "ask_attribute",
+    "must_tools": ["search_instances", "get_instance"],
+    "entity_labels": ["1号主变压器"],
+    "empty_ok": false
+  },
+  {
+    "id": "q-rel-fault",
+    "question": "查询设备A最近发生的故障，以及导致该故障的相关原因。",
+    "intent": "multi_hop",
+    "must_tools": ["search_instances"],
+    "optional_tools": ["get_instance", "list_relations", "expand_hops"],
+    "entity_labels": ["设备A"],
+    "empty_ok": true
+  },
+  {
+    "id": "q-schema",
+    "question": "这个本体里有哪些类？",
+    "intent": "schema_explain",
+    "must_tools": ["get_schema"],
+    "empty_ok": false
+  },
+  {
+    "id": "q-chitchat",
+    "question": "今天天气怎么样？",
+    "intent": "chitchat_reject",
+    "must_tools": [],
+    "empty_ok": true
+  },
+  {
+    "id": "q-missing",
+    "question": "宇宙尽头的那台变压器编号是多少？",
+    "intent": "lookup_entity",
+    "must_tools": ["search_instances"],
+    "empty_ok": true,
+    "require_honest_empty": true
+  }
+]

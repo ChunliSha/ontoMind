@@ -1,1 +1,1 @@
-"""OntoMind backend application package."""
+"""KnowMind backend application package."""

@@ -77,6 +77,24 @@ class OpenAICompatibleProvider:
                 message="未配置 API Base，请在模型管理中填写服务地址",
             )
 
+    async def chat(
+        self,
+        system: str,
+        user: str,
+        *,
+        timeout: float = 120.0,
+        use_json_object: bool = True,
+        temperature: float = 0.2,
+    ) -> str:
+        """Public chat-completions helper used by extraction and knowledge QA."""
+        return await self._chat(
+            system,
+            user,
+            timeout=timeout,
+            use_json_object=use_json_object,
+            temperature=temperature,
+        )
+
     async def _chat(
         self,
         system: str,
@@ -84,6 +102,7 @@ class OpenAICompatibleProvider:
         *,
         timeout: float = 120.0,
         use_json_object: bool = True,
+        temperature: float = 0.2,
     ) -> str:
         self._ensure_configured()
         headers = {"Content-Type": "application/json"}
@@ -95,7 +114,7 @@ class OpenAICompatibleProvider:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0.2,
+            "temperature": temperature,
         }
         if use_json_object:
             payload["response_format"] = {"type": "json_object"}
@@ -107,7 +126,13 @@ class OpenAICompatibleProvider:
             # 部分本地网关不支持 response_format，降级重试
             if resp.status_code in (400, 422) and use_json_object:
                 logger.warning("response_format unsupported, retry without it: %s", resp.text[:200])
-                return await self._chat(system, user, timeout=timeout, use_json_object=False)
+                return await self._chat(
+                    system,
+                    user,
+                    timeout=timeout,
+                    use_json_object=False,
+                    temperature=temperature,
+                )
             resp.raise_for_status()
             data = resp.json()
             content = data["choices"][0]["message"]["content"]

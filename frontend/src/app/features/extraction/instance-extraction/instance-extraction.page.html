@@ -232,9 +232,9 @@
           <div class="file-pick" style="justify-content:space-between;">
             <label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;margin:0;">
               <input type="checkbox" [checked]="store.selectedMappingIds().has(m.id)" (change)="store.toggleMapping(m.id)" />
-              <span>
-                {{ mappingLabel(m) }}
-                <small style="color:var(--text-400);margin-left:6px;">{{ m.id.slice(0,8) }}</small>
+              <span style="display:flex;flex-direction:column;gap:2px;min-width:0;">
+                <span>{{ mappingLabel(m) }}</span>
+                <small style="color:var(--text-400);">{{ mappingOrigin(m) }}</small>
               </span>
             </label>
             <button class="btn btn-ghost btn-sm" type="button" title="删除映射"

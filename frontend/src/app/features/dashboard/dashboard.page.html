@@ -2,7 +2,7 @@
   <div class="view-head">
     <p class="eyebrow">Welcome</p>
     <h1>知识建模辅助抽取工具</h1>
-    <p class="lead">从结构化数据库与非结构化文档出发，AI 辅助完成 Schema 设计、实例数据抽取，并以知识图谱形式验证成果 — 一个覆盖本体构建全流程的工作台。</p>
+    <p class="lead">从结构化数据库与非结构化文档出发，AI 辅助完成 Schema 设计与实例抽取，再通过知识问答与 MCP 服务使用本体 — 一个覆盖构建到应用的工作台。</p>
   </div>
 
   @if (store.summary(); as s) {
@@ -30,8 +30,8 @@
   }
 
   <div class="pipeline-block">
-    <h2>快速上手 · 四步构建本体</h2>
-    <p class="pipeline-sub">按顺序完成以下步骤，即可从原始数据得到一份可探索的知识图谱</p>
+    <h2>快速上手 · 四步从构建到应用</h2>
+    <p class="pipeline-sub">按顺序完成数据接入、Schema 设计、实例抽取，再通过本体应用使用知识</p>
     <div class="pipeline">
       <ui-pipeline-step num="01" icon="database" title="业务数据集成"
         desc="接入结构化数据库（PostgreSQL / MySQL / GaussDB）表数据，或上传非结构化文档，作为建模原料。"
@@ -42,9 +42,9 @@
       <ui-pipeline-step num="03" icon="sparkles" title="AI 辅助抽取"
         desc="基于确认后的 Schema，从数据源中自动抽取符合约束的实例数据及业务逻辑。"
         link="/extraction/instances" linkText="前往 AI 辅助抽取" />
-      <ui-pipeline-step num="04" icon="network" title="图谱探索"
-        desc="将 Schema 与实例以知识图谱形式可视化，支持 Schema 视图与实例视图独立查看。"
-        link="/graph" linkText="前往图谱探索" />
+      <ui-pipeline-step num="04" icon="message-square" title="本体应用"
+        desc="基于已构建的本体开展知识问答，或发布 MCP 服务，供外部工具直接调用知识。"
+        link="/ontology-app/qa" linkText="前往本体应用" />
     </div>
   </div>
 

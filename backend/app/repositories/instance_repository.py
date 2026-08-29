@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -146,6 +146,48 @@ class InstanceRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def search(
+        self,
+        session: AsyncSession,
+        schema_id: uuid.UUID,
+        *,
+        schema_version: int | None = None,
+        q: str | None = None,
+        class_id: uuid.UUID | None = None,
+        limit: int = 20,
+    ) -> list[OntologyInstance]:
+        filt = [OntologyInstance.schema_id == schema_id]
+        if schema_version is not None:
+            filt.append(OntologyInstance.schema_version == schema_version)
+        if class_id is not None:
+            filt.append(OntologyInstance.class_id == class_id)
+        stmt = select(OntologyInstance).where(*filt)
+        needle = (q or "").strip()
+        if needle:
+            like = f"%{needle}%"
+            stmt = (
+                stmt.outerjoin(
+                    InstanceDataValue,
+                    InstanceDataValue.instance_id == OntologyInstance.id,
+                )
+                .outerjoin(OntologyClass, OntologyClass.id == OntologyInstance.class_id)
+                .where(
+                    or_(
+                        OntologyInstance.label.ilike(like),
+                        OntologyInstance.local_name.ilike(like),
+                        InstanceDataValue.value.ilike(like),
+                        OntologyClass.label.ilike(like),
+                    )
+                )
+                .distinct()
+            )
+        stmt = (
+            stmt.options(selectinload(OntologyInstance.data_values))
+            .order_by(OntologyInstance.created_at.desc())
+            .limit(limit)
+        )
+        return list((await session.execute(stmt)).scalars().all())
 
     async def find_by_local_name(
         self,

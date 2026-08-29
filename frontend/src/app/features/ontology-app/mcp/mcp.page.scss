@@ -1,0 +1,40 @@
+.mcp-tabs {
+  display: flex;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+.mcp-tabs .btn { min-width: 140px; }
+.key-reveal {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  margin-bottom: 4px;
+}
+.key-reveal p { margin: 6px 0 10px; font-size: 12.5px; color: var(--text-500); }
+.key-value {
+  display: block;
+  word-break: break-all;
+  font-size: 12.5px;
+  color: var(--text-900);
+}
+.key-reveal-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+.mcp-form { display: flex; flex-direction: column; gap: 12px; }
+.mcp-form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.picked-tools { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; }
+.picked-tool {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.picked-tool span { color: var(--text-400); margin-left: 4px; }
+.hint { color: var(--text-400); font-size: 12.5px; }
+.data-table ui-badge { margin: 0 4px 4px 0; }
+.row-actions { flex-wrap: wrap; }
