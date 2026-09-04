@@ -6,7 +6,7 @@ import { MappingsApi } from '../../../core/api/mappings.api';
 import { DbSourcesApi } from '../../../core/api/db-sources.api';
 import { LlmModelsApi } from '../../../core/api/llm-models.api';
 import { OntologyModelsApi } from '../../../core/api/ontology-models.api';
-import { SchemaRead, ClassRead } from '../../../core/models/schema';
+import { SchemaRead, ClassRead, PropertyRead } from '../../../core/models/schema';
 import { FileRead } from '../../../core/models/file';
 import { LlmModelRead } from '../../../core/models/llm';
 import { OntologyModelCreate, OntologyModelRead, OntologyModelUpdate } from '../../../core/models/ontology-model';
@@ -16,6 +16,7 @@ import {
   InstanceInventory,
   InstanceRead,
   InstanceStat,
+  InstanceUpdate,
 } from '../../../core/models/extraction';
 import { MappingBinding, MappingRead, SourceField, TargetProperty } from '../../../core/models/mapping';
 import { DbSourceRead, DbTableRead } from '../../../core/models/db-source';
@@ -37,12 +38,13 @@ function emptyPreview(): PreviewBucket {
 function statsFromInstances(items: InstanceRead[]): InstanceStat[] {
   const byClass = new Map<string, InstanceStat>();
   for (const i of items) {
-    const cur = byClass.get(i.class_id);
+    const classId = i.class_id || '';
+    const cur = byClass.get(classId);
     if (cur) cur.count += 1;
     else {
-      byClass.set(i.class_id, {
-        class_id: i.class_id,
-        class_label: i.class_label || i.class_id.slice(0, 8),
+      byClass.set(classId, {
+        class_id: classId,
+        class_label: i.class_label || (classId ? classId.slice(0, 8) : '未分类'),
         count: 1,
       });
     }
@@ -70,6 +72,8 @@ export class InstanceExtractionStore implements OnDestroy {
   readonly schemas = signal<SchemaRead[]>([]);
   readonly schemaId = signal<string>('');
   readonly classes = signal<ClassRead[]>([]);
+  readonly schemaProperties = signal<PropertyRead[]>([]);
+  readonly editCandidates = signal<InstanceRead[]>([]);
   readonly files = signal<FileRead[]>([]);
   readonly selectedFileIds = signal<Set<string>>(new Set());
   readonly models = signal<LlmModelRead[]>([]);
@@ -119,7 +123,8 @@ export class InstanceExtractionStore implements OnDestroy {
   readonly filteredInstances = computed(() => {
     const classId = this.previewClassId();
     const rows = this.instances();
-    if (!classId) return rows;
+    if (classId === null) return rows;
+    if (classId === '') return rows.filter((i) => !i.class_id);
     return rows.filter((i) => i.class_id === classId);
   });
 
@@ -130,12 +135,13 @@ export class InstanceExtractionStore implements OnDestroy {
     }
     const map = new Map<string, { id: string; label: string; count: number }>();
     for (const i of this.instances()) {
-      const cur = map.get(i.class_id);
+      const id = i.class_id || '';
+      const cur = map.get(id);
       if (cur) cur.count += 1;
       else {
-        map.set(i.class_id, {
-          id: i.class_id,
-          label: i.class_label || i.class_id.slice(0, 8),
+        map.set(id, {
+          id,
+          label: i.class_label || (id ? id.slice(0, 8) : '未分类'),
           count: 1,
         });
       }
@@ -260,6 +266,10 @@ export class InstanceExtractionStore implements OnDestroy {
     this.previewClassId.set(null);
     this.task.set(null);
     this.schemasApi.classes(id).subscribe({ next: (c) => this.classes.set(c) });
+    this.schemasApi.schemaProperties(id).subscribe({
+      next: (p) => this.schemaProperties.set(p || []),
+      error: () => this.schemaProperties.set([]),
+    });
     this.reloadMappings();
     this.refreshInventory();
   }
@@ -455,7 +465,7 @@ export class InstanceExtractionStore implements OnDestroy {
   }
 
   setPreviewClassFilter(classId: string | null): void {
-    this.previewClassId.set(classId || null);
+    this.previewClassId.set(classId);
   }
 
   togglePreviewClassFilter(classId: string): void {
@@ -713,8 +723,86 @@ export class InstanceExtractionStore implements OnDestroy {
     });
   }
 
-  loadInstance(id: string): void {
-    this.extraction.instanceDetail(id).subscribe({ next: (d) => this.instanceDetail.set(d) });
+  loadInstance(id: string, onLoaded?: (d: InstanceDetail) => void): void {
+    this.extraction.instanceDetail(id).subscribe({
+      next: (d) => {
+        this.instanceDetail.set(d);
+        onLoaded?.(d);
+      },
+    });
+    this.loadEditCandidates();
+  }
+
+  loadEditCandidates(): void {
+    const id = this.schemaId();
+    if (!id) {
+      this.editCandidates.set(this.instances());
+      return;
+    }
+    this.schemasApi.listInstances(id, {
+      schema_version: this.inventoryVersion(),
+      page: 1,
+      page_size: 500,
+    }).subscribe({
+      next: (r) => this.editCandidates.set(r.items ?? []),
+      error: () => this.editCandidates.set(this.instances()),
+    });
+  }
+
+  saveInstance(id: string, body: InstanceUpdate, onDone?: () => void, onFail?: () => void): void {
+    this.extraction.updateInstance(id, body).subscribe({
+      next: () => {
+        this.toast.success('实例已更新');
+        this.refreshAfterInstanceEdit();
+        onDone?.();
+      },
+      error: () => {
+        this.toast.error('保存失败，请检查属性与目标实例');
+        onFail?.();
+      },
+    });
+  }
+
+  deleteInstance(id: string, onDone?: () => void, onFail?: () => void): void {
+    this.extraction.deleteInstance(id).subscribe({
+      next: () => {
+        this.toast.success('实例已删除');
+        this.refreshAfterInstanceEdit();
+        onDone?.();
+      },
+      error: () => {
+        this.toast.error('删除实例失败');
+        onFail?.();
+      },
+    });
+  }
+
+  private refreshAfterInstanceEdit(): void {
+    this.refreshInventory();
+    const view = this.previewView();
+    if (view === 'merged') this.reloadMergedQuiet();
+    else this.loadModePreview(view === 'struct' ? 'struct' : 'unstruct', false);
+  }
+
+  private reloadMergedQuiet(): void {
+    const id = this.schemaId();
+    if (!id) return;
+    this.schemasApi.listInstances(id, {
+      schema_version: this.inventoryVersion(),
+      page: 1,
+      page_size: 200,
+    }).subscribe({
+      next: (r) => {
+        const items = r.items ?? [];
+        this.inventoryInstances.set(items);
+        this.inventoryTotal.set(r.total ?? 0);
+        this.mergedPreview.set({
+          task: null,
+          instances: items,
+          stats: statsFromInstances(items),
+        });
+      },
+    });
   }
 
   toggleMapping(id: string): void {

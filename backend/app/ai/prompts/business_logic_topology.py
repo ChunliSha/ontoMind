@@ -57,7 +57,7 @@ TOPOLOGY_SYSTEM = """你是业务逻辑拓扑抽取助手。任务：阅读文�
 
 ## 识别维度
 构建拓扑时依次识别：
-1. 业务行为：谁、对什么对象、执行了什么操作、产生什么结果。
+1. 业务行为：谁、对什么对象、做了哪一步、产生什么结果。
 2. 业务步骤：一个场景包含哪些关联步骤，先后顺序是什么。
 3. 业务依赖：某步骤需要什么前置条件，前一行为的结果是否影响后续行为。
 4. 触发关系：什么事件/条件/结果会触发后续行为（如：提交→审核、审核→处理、处理→结果、结果→再触发后续业务）。
@@ -88,9 +88,9 @@ TOPOLOGY_SYSTEM = """你是业务逻辑拓扑抽取助手。任务：阅读文�
 ## 硬性输出格式要求
 1. 只返回一个 JSON 对象，不要 Markdown，不要解释。
 2. 顶层字段：name, nodes, edges。
-3. 每个 node 必须含 key, type, label。type 是本体类名（见候选清单的键），不要使用 业务操作/故障/建议 这类画布类型。
+3. 每个 node 必须含 key, type, label。type 必须是本次候选清单的键之一（当前为：__ALLOWED_CLASSES__）。不要照抄示例中的 type；不要使用「业务操作」等画布类型，除非该名称恰好出现在清单中。
 4. 节点必须优先对应候选清单中的实例：instance_ref 填该实例的 id 或 label。
-5. 不要发明候选清单之外的实例 id。文档有步骤但清单里没有对应实例时，仍输出节点，instance_ref 留空（将作为自定义节点）。
+5. 不要发明候选清单之外的实例 id。文档有步骤但清单里没有对应实例时，仍输出节点，instance_ref 留空（自定义节点）。此时 type 仍须从上列类名中选择最接近的一个；实在无法对应则将 type 留空，由程序标为未落地。
 6. 不要发明清单中不存在的实体；文案可以来自文档。
 7. edges 用 node.key 连接；判断分支的 label 应体现实际业务条件（见"判断分支规则"），仅在原文本身即为二元是非判断时才使用"是"/"否"；非判断性的边 label 可为空字符串 ""。
 8. 只抽取文档中出现的流程，禁止臆造文档没有的步骤。同一实例在图中只出现一次。
@@ -102,17 +102,50 @@ JSON 形状：
   "nodes": [
     {
       "key": "n1",
-      "type": "操作",
-      "label": "主站召测请求下发",
-      "instance_ref": "主站召测请求下发",
+      "type": "__EXAMPLE_CLASS__",
+      "label": "步骤名称（来自文档）",
+      "instance_ref": "对应实例的 id 或 label，没有则留空",
       "description": "...",
-      "judgement_content": "召测结果：成功 / 失败",
+      "judgement_content": "该步骤的判断条件（来自文档）",
       "step1_analysis": "..."
     }
   ],
   "edges": [
-    {"source": "n1", "target": "n2", "label": "召测结果为失败"}
+    {"source": "n1", "target": "n2", "label": "该分支的业务条件（来自文档）"}
   ]
 }
 """
-TOPOLOGY_RETRY = """上次输出无法通过校验。请只返回 JSON 对象，字段为 name/nodes/edges。nodes[].type 尽量使用给定的本体类名，edges 的 source/target 必须是 nodes[].key。不要 Markdown。"""
+TOPOLOGY_RETRY = (
+    "上次输出无法通过校验。请只返回 JSON 对象，字段为 name/nodes/edges。"
+    "nodes[].type 必须是本次候选清单中的类名（当前为：__ALLOWED_CLASSES__），"
+    "禁止编造清单外的类名。edges 的 source/target 必须是 nodes[].key。不要 Markdown。"
+)
+
+
+def render_topology_system(catalog_by_class: dict | None) -> str:
+    example, allowed = catalog_type_hints(catalog_by_class)
+    return TOPOLOGY_SYSTEM.replace("__EXAMPLE_CLASS__", example).replace(
+        "__ALLOWED_CLASSES__", allowed
+    )
+
+
+def render_topology_retry(catalog_by_class: dict | None) -> str:
+    _, allowed = catalog_type_hints(catalog_by_class)
+    return TOPOLOGY_RETRY.replace("__ALLOWED_CLASSES__", allowed)
+
+
+def catalog_type_instruction(catalog_by_class: dict | None) -> str:
+    _, allowed = catalog_type_hints(catalog_by_class)
+    return (
+        f"nodes[].type 必须是下列类名之一：{allowed}。"
+        "instance_ref 优先用 id；没有对应实例时 instance_ref 留空，type 仍须从上列选择，选不出则留空。"
+    )
+
+
+def catalog_type_hints(catalog_by_class: dict | None) -> tuple[str, str]:
+    names = sorted(
+        {str(key).strip() for key in (catalog_by_class or {}) if str(key).strip()}
+    )
+    if not names:
+        return "未落地", "（本次清单为空，请将 type 留空）"
+    return names[0], "、".join(names)

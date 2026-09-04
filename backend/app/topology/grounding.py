@@ -34,9 +34,13 @@ def ground_logic_graph(
             node.instance_id = None
             node.matched_by = "unmatched"
             node.match_score = 0.0
-            cls = class_by_label.get(normalize_alias(node.type))
-            if cls:
-                node.type = cls.label
-            elif not (node.type or "").strip():
-                node.type = UNGROUNDED_TYPE
+            _apply_unmatched_type(node, class_by_label)
     return graph
+
+
+def _apply_unmatched_type(node, class_by_label) -> None:
+    cls = class_by_label.get(normalize_alias(node.type))
+    if cls:
+        node.type = cls.label
+        return
+    node.type = UNGROUNDED_TYPE

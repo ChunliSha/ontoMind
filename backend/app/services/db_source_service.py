@@ -26,6 +26,39 @@ from app.services._utils import parse_uuid
 
 logger = logging.getLogger(__name__)
 
+_TABLES_SQL = """
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE table_type = 'BASE TABLE'
+  AND table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+ORDER BY table_schema, table_name
+"""
+
+_COLUMNS_SQL = """
+SELECT c.column_name, c.data_type, c.ordinal_position,
+       CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN true ELSE false END AS is_pk
+FROM information_schema.columns c
+LEFT JOIN information_schema.key_column_usage kcu
+  ON c.table_schema = kcu.table_schema
+ AND c.table_name = kcu.table_name
+ AND c.column_name = kcu.column_name
+LEFT JOIN information_schema.table_constraints tc
+  ON kcu.constraint_name = tc.constraint_name
+ AND kcu.table_schema = tc.table_schema
+ AND tc.constraint_type = 'PRIMARY KEY'
+WHERE c.table_schema = $1 AND c.table_name = $2
+ORDER BY c.ordinal_position
+"""
+
+
+def _column_meta(col) -> dict:
+    return {
+        "name": col["column_name"],
+        "type": col["data_type"],
+        "pk": bool(col["is_pk"]),
+        "ordinal": int(col["ordinal_position"] or 0),
+    }
+
 
 def _to_read(obj: DataSourceDb) -> DbSourceRead:
     return DbSourceRead(
@@ -246,59 +279,30 @@ class DbSourceService:
     async def _reflect(self, session: AsyncSession, obj: DataSourceDb) -> None:
         conn = await self._connect(obj)
         try:
-            tables = await conn.fetch(
-                """
-                SELECT table_schema, table_name
-                FROM information_schema.tables
-                WHERE table_type = 'BASE TABLE'
-                  AND table_schema NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-                ORDER BY table_schema, table_name
-                """
-            )
-            meta: list[dict] = []
-            for t in tables:
-                sch, tname = t["table_schema"], t["table_name"]
-                cols = await conn.fetch(
-                    """
-                    SELECT c.column_name, c.data_type, c.ordinal_position,
-                           CASE WHEN tc.constraint_type = 'PRIMARY KEY' THEN true ELSE false END AS is_pk
-                    FROM information_schema.columns c
-                    LEFT JOIN information_schema.key_column_usage kcu
-                      ON c.table_schema = kcu.table_schema
-                     AND c.table_name = kcu.table_name
-                     AND c.column_name = kcu.column_name
-                    LEFT JOIN information_schema.table_constraints tc
-                      ON kcu.constraint_name = tc.constraint_name
-                     AND kcu.table_schema = tc.table_schema
-                     AND tc.constraint_type = 'PRIMARY KEY'
-                    WHERE c.table_schema = $1 AND c.table_name = $2
-                    ORDER BY c.ordinal_position
-                    """,
-                    sch,
-                    tname,
-                )
-                meta.append(
-                    {
-                        "schema": sch,
-                        "name": tname,
-                        "columns": [
-                            {
-                                "name": c["column_name"],
-                                "type": c["data_type"],
-                                "pk": bool(c["is_pk"]),
-                                "ordinal": int(c["ordinal_position"] or 0),
-                            }
-                            for c in cols
-                        ],
-                    }
-                )
-        except AppError:
-            raise
+            meta = await self._fetch_table_meta(conn)
         except Exception as exc:  # noqa: BLE001
             raise AppError(ErrorCode.DB_SOURCE_001, message=f"反射表结构失败: {exc}") from exc
         finally:
             await conn.close()
+        await self._upsert_reflected_tables(session, obj, meta)
 
+    @staticmethod
+    async def _fetch_table_meta(conn) -> list[dict]:
+        tables = await conn.fetch(_TABLES_SQL)
+        meta: list[dict] = []
+        for table in tables:
+            schema_name, table_name = table["table_schema"], table["table_name"]
+            cols = await conn.fetch(_COLUMNS_SQL, schema_name, table_name)
+            meta.append(
+                {
+                    "schema": schema_name,
+                    "name": table_name,
+                    "columns": [_column_meta(col) for col in cols],
+                }
+            )
+        return meta
+
+    async def _upsert_reflected_tables(self, session, obj, meta) -> None:
         old = await self.table_repo.list_by_source(session, obj.id)
         by_key = {(t.table_schema, t.table_name): t for t in old}
         seen: set[tuple[str, str]] = set()

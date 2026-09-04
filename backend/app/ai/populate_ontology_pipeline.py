@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any
 
 from rdflib import Literal, Namespace, URIRef, XSD
@@ -312,36 +313,30 @@ def is_value_grounded_in_text(value: str, text: str) -> bool:
     return False
 
 
-def map_graph(
-    entities: list[list[Any]],
-    relations: list[list[Any]],
-    triplets: list[Any],
-    ontology: dict[str, Any],
-    texts: list[str] | None = None,
-    triplet_source_texts: list[str] | None = None,
-) -> tuple[dict[str, Any], list[tuple[URIRef, URIRef, Literal]]]:
-    instances = map_instances(entities, ontology)
-    object_index = build_alias_index(ontology["object_props"])
-    data_index = build_alias_index(ontology["data_props"])
-    relationships: list[dict[str, str]] = []
-    literals: list[tuple[URIRef, URIRef, Literal]] = []
-    seen_rel: set[tuple[str, str, str]] = set()
-    dropped_ungrounded = 0
-    corpus = "\n".join(t for t in (texts or []) if t)
+@dataclass
+class _GraphMapper:
+    instances: dict
+    object_index: dict
+    data_index: dict
+    corpus: str
+    relationships: list[dict[str, str]] = field(default_factory=list)
+    literals: list[tuple[URIRef, URIRef, Literal]] = field(default_factory=list)
+    seen_rel: set[tuple[str, str, str]] = field(default_factory=set)
+    dropped_ungrounded: int = 0
 
-    def add_object_link(subject_text: str, predicate: str, object_text: str) -> None:
-        pred = normalize_term(predicate, object_index)
+    def add_object_link(self, subject_text: str, predicate: str, object_text: str) -> None:
+        pred = normalize_term(predicate, self.object_index)
         if not pred:
             return
-        src = resolve_instance(subject_text, instances)
-        dst = resolve_instance(object_text, instances)
+        src = resolve_instance(subject_text, self.instances)
+        dst = resolve_instance(object_text, self.instances)
         if not src or not dst:
             return
         triple = (src["id"], str(NS[pred]), dst["id"])
-        if triple in seen_rel:
+        if triple in self.seen_rel:
             return
-        seen_rel.add(triple)
-        relationships.append(
+        self.seen_rel.add(triple)
+        self.relationships.append(
             {
                 "source_id": triple[0],
                 "target_id": triple[2],
@@ -350,56 +345,74 @@ def map_graph(
             }
         )
 
-    def add_data_link(subject_text: str, predicate: str, value: str, source_text: str) -> None:
-        nonlocal dropped_ungrounded
-        pred = normalize_term(predicate, data_index)
-        src = resolve_instance(subject_text, instances)
+    def add_data_link(self, subject_text: str, predicate: str, value: str, source_text: str) -> None:
+        pred = normalize_term(predicate, self.data_index)
+        src = resolve_instance(subject_text, self.instances)
         if not pred or not src or not value:
             return
         grounded = is_value_grounded_in_text(value, source_text) or (
-            not source_text and is_value_grounded_in_text(value, corpus)
+            not source_text and is_value_grounded_in_text(value, self.corpus)
         )
         if not grounded:
-            dropped_ungrounded += 1
+            self.dropped_ungrounded += 1
             return
         datatype = XSD.date if pred.lower().endswith("date") else XSD.string
-        literals.append((src["iri"], NS[pred], Literal(value, datatype=datatype)))
+        self.literals.append((src["iri"], NS[pred], Literal(value, datatype=datatype)))
 
+    def graph_data(self) -> dict[str, Any]:
+        return {
+            "entities": [
+                {
+                    "id": inst["id"],
+                    "text": inst["text"],
+                    "type": inst["type"],
+                    "class_local": inst["class_local"],
+                    "confidence": inst["confidence"],
+                }
+                for inst in self.instances.values()
+            ],
+            "relationships": self.relationships,
+            "dropped_ungrounded_literals": self.dropped_ungrounded,
+            "_instances": self.instances,
+        }
+
+
+def map_graph(
+    entities: list[list[Any]],
+    relations: list[list[Any]],
+    triplets: list[Any],
+    ontology: dict[str, Any],
+    texts: list[str] | None = None,
+    triplet_source_texts: list[str] | None = None,
+) -> tuple[dict[str, Any], list[tuple[URIRef, URIRef, Literal]]]:
+    corpus = "\n".join(t for t in (texts or []) if t)
+    mapper = _GraphMapper(
+        instances=map_instances(entities, ontology),
+        object_index=build_alias_index(ontology["object_props"]),
+        data_index=build_alias_index(ontology["data_props"]),
+        corpus=corpus,
+    )
     for doc_relations in relations:
         for rel in doc_relations:
-            add_object_link(
+            mapper.add_object_link(
                 entity_mention(rel.subject),
                 rel.predicate,
                 entity_mention(rel.object),
             )
+    _map_triplets(mapper, triplets, triplet_source_texts, corpus)
+    return mapper.graph_data(), mapper.literals
 
+
+def _map_triplets(mapper: _GraphMapper, triplets, triplet_source_texts, corpus) -> None:
     if triplet_source_texts is not None and len(triplet_source_texts) == len(triplets):
         paired = zip(triplets, triplet_source_texts, strict=True)
     else:
-        paired = ((t, corpus) for t in triplets)
-
+        paired = ((item, corpus) for item in triplets)
     for triplet, src_text in paired:
-        if normalize_term(triplet.predicate, object_index):
-            add_object_link(triplet.subject, triplet.predicate, triplet.object)
-        elif normalize_term(triplet.predicate, data_index):
-            add_data_link(triplet.subject, triplet.predicate, triplet.object, src_text)
-
-    graph_data = {
-        "entities": [
-            {
-                "id": inst["id"],
-                "text": inst["text"],
-                "type": inst["type"],
-                "class_local": inst["class_local"],
-                "confidence": inst["confidence"],
-            }
-            for inst in instances.values()
-        ],
-        "relationships": relationships,
-        "dropped_ungrounded_literals": dropped_ungrounded,
-        "_instances": instances,
-    }
-    return graph_data, literals
+        if normalize_term(triplet.predicate, mapper.object_index):
+            mapper.add_object_link(triplet.subject, triplet.predicate, triplet.object)
+        elif normalize_term(triplet.predicate, mapper.data_index):
+            mapper.add_data_link(triplet.subject, triplet.predicate, triplet.object, src_text)
 
 
 def _uri_local(uri: str | URIRef) -> str:
@@ -424,10 +437,13 @@ def graph_to_extracted(
     ontology: dict[str, Any],
 ) -> list[ExtractedInstance]:
     """Convert reference map_graph output → product ExtractedInstance list."""
-    class_labels = ontology["classes"]  # local → label
-    object_labels = ontology["object_props"]
-    data_labels = ontology["data_props"]
+    by_id = _entities_to_extracted(graph_data, ontology["classes"])
+    _apply_object_rels(by_id, graph_data.get("relationships") or [], ontology["object_props"])
+    _apply_literals(by_id, literals, ontology["data_props"])
+    return list(by_id.values())
 
+
+def _entities_to_extracted(graph_data: dict[str, Any], class_labels: dict) -> dict[str, ExtractedInstance]:
     by_id: dict[str, ExtractedInstance] = {}
     for ent in graph_data.get("entities") or []:
         class_local = ent.get("class_local") or _uri_local(ent.get("type") or "")
@@ -443,23 +459,29 @@ def graph_to_extracted(
             data_values=[],
             relations=[],
         )
+    return by_id
 
-    for rel in graph_data.get("relationships") or []:
+
+def _apply_object_rels(by_id, relationships, object_labels) -> None:
+    for rel in relationships:
         src = by_id.get(rel["source_id"])
         dst = by_id.get(rel["target_id"])
         if not src or not dst:
             continue
         pred_local = rel.get("pred_local") or _uri_local(rel.get("type") or "")
         prop_label = object_labels.get(pred_local, pred_local)
-        if any(
-            r.property_label == prop_label and r.target_instance_label == dst.label
-            for r in src.relations
-        ):
+        already = any(
+            item.property_label == prop_label and item.target_instance_label == dst.label
+            for item in src.relations
+        )
+        if already:
             continue
         src.relations.append(
             ExtractedRelation(property_label=prop_label, target_instance_label=dst.label)
         )
 
+
+def _apply_literals(by_id, literals, data_labels) -> None:
     for subj_iri, pred_uri, lit in literals:
         src = by_id.get(str(subj_iri))
         if not src:
@@ -467,11 +489,12 @@ def graph_to_extracted(
         pred_local = _uri_local(pred_uri)
         prop_label = data_labels.get(pred_local, pred_local)
         value = str(lit)
-        if any(d.property_label == prop_label and d.value == value for d in src.data_values):
+        already = any(
+            item.property_label == prop_label and item.value == value for item in src.data_values
+        )
+        if already:
             continue
         src.data_values.append(ExtractedDataValue(property_label=prop_label, value=value))
-
-    return list(by_id.values())
 
 
 def extract_instances_sync(
@@ -520,5 +543,5 @@ def extract_instances_sync(
 
 # ---- helpers still used by extraction_service / tests ----
 
-def _instance_merge_key(class_label: str, mention: str) -> tuple[str, str]:
+def instance_merge_key(class_label: str, mention: str) -> tuple[str, str]:
     return (class_label.strip().lower(), slug(mention).lower())

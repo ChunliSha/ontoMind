@@ -88,6 +88,27 @@ class InstanceRelationRead(BaseModel):
     property_label: str | None = None
     object_instance_id: str
     object_instance_label: str | None = None
+    object_label: str | None = None
+    object_class_label: str | None = None
+    direction: str = "out"
+
+
+class InstanceDataValueWrite(BaseModel):
+    property_id: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
+class InstanceRelationWrite(BaseModel):
+    property_id: str = Field(min_length=1)
+    object_instance_id: str = Field(min_length=1)
+
+
+class InstanceUpdate(BaseModel):
+    """Replace class + data values + outgoing object relations in one save."""
+
+    class_id: str | None = None
+    data_values: list[InstanceDataValueWrite] = Field(default_factory=list)
+    relations: list[InstanceRelationWrite] = Field(default_factory=list)
 
 
 class InstanceRead(BaseModel):
@@ -95,7 +116,7 @@ class InstanceRead(BaseModel):
 
     id: str
     schema_id: str
-    class_id: str
+    class_id: str | None = None
     class_label: str | None = None
     label: str
     local_name: str | None = None

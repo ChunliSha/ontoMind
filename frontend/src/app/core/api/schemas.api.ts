@@ -65,6 +65,10 @@ export class SchemasApi {
     return this.api.get<PropertyRead[]>(`/classes/${classId}/properties`);
   }
 
+  schemaProperties(schemaId: string): Observable<PropertyRead[]> {
+    return this.api.get<PropertyRead[]>(`/schemas/${schemaId}/properties`);
+  }
+
   createProperty(classId: string, body: PropertyCreate): Observable<PropertyRead> {
     return this.api.post<PropertyRead>(`/classes/${classId}/properties`, body);
   }

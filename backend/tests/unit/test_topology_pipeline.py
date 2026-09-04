@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.topology.assemble import assemble_topology
+from app.topology.assemble import assemble_topology, merge_schema_properties
 from app.topology.grounding import ground_logic_graph
 from app.topology.index import IndexedClass, IndexedInstance, IndexedRelation, OntologyIndex
 from app.topology.layout import layout_topology
@@ -14,8 +14,21 @@ from app.topology.pipeline import build_from_logic, catalog_for_prompt
 
 def _index() -> OntologyIndex:
     classes = [
-        IndexedClass("c-op", "操作", local_name="Operation", instance_count=2),
-        IndexedClass("c-fault", "故障", local_name="Fault", instance_count=1),
+        IndexedClass(
+            "c-op",
+            "操作",
+            local_name="Operation",
+            instance_count=2,
+            data_property_labels=["接口名称", "请求方法"],
+            object_property_labels=["关联设备"],
+        ),
+        IndexedClass(
+            "c-fault",
+            "故障",
+            local_name="Fault",
+            instance_count=1,
+            data_property_labels=["故障编码"],
+        ),
         IndexedClass("c-sug", "建议", local_name="Suggestion", instance_count=1),
     ]
     instances = [
@@ -143,6 +156,42 @@ def test_grounding_exact_and_unmatched():
     assert grounded.nodes[0].matched_by == "exact"
     assert grounded.nodes[1].instance_id is None
     assert grounded.nodes[1].matched_by == "unmatched"
+    assert grounded.nodes[1].type == "故障"
+
+
+def test_grounding_unknown_type_becomes_ungrounded():
+    classes = [IndexedClass("c-dev", "设备", local_name="Device", instance_count=1)]
+    instances = [
+        IndexedInstance(
+            id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1",
+            class_id="c-dev",
+            class_label="设备",
+            label="变压器A",
+        )
+    ]
+    index = OntologyIndex(schema_id="s1", schema_version=1, classes=classes, instances=instances)
+    graph = LogicGraph(nodes=[LogicNode(key="n1", type="操作", label="文档里的步骤")])
+    grounded = ground_logic_graph(graph, index)
+    assert grounded.nodes[0].instance_id is None
+    assert grounded.nodes[0].type == "未落地"
+
+
+def test_topology_prompt_fills_type_from_catalog():
+    from app.ai.prompts.business_logic_topology import (
+        catalog_type_hints,
+        render_topology_retry,
+        render_topology_system,
+    )
+
+    catalog = {"设备": [], "工单": []}
+    example, allowed = catalog_type_hints(catalog)
+    system = render_topology_system(catalog)
+    retry = render_topology_retry(catalog)
+    assert '"type": "操作"' not in system
+    assert f'"type": "{example}"' in system
+    assert "设备" in allowed and "工单" in allowed
+    assert allowed in system
+    assert allowed in retry
 
 
 def test_assemble_grounds_and_keeps_custom():
@@ -163,11 +212,90 @@ def test_assemble_grounds_and_keeps_custom():
     fault = next(n for n in graph.nodes if n.label == "未知故障")
     assert op.properties["selectedObjectId"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"
     assert op.properties.get("classLabel") == "操作"
-    assert op.properties["judgementContent"] == "是否下发成功"
+    assert op.properties.get("接口名称") == "主站召测请求报文是否成功下发"
+    assert op.properties.get("请求方法") == "POST"
+    assert op.properties.get("关联设备") == "主站"
+    assert "judgementContent" not in op.properties
     assert fault.properties["selectedObjectId"] == UNGROUNDED_OBJECT_ID
-    assert fault.properties["description"] == "文档描述"
+    assert fault.properties.get("故障编码") == ""
+    assert "description" not in fault.properties
     assert key_map["n1"] == op.id
     assert op.color
+
+
+def test_assemble_grounded_fault_uses_instance_data():
+    index = _index()
+    nodes = [
+        LogicNode(
+            key="n1",
+            type="故障",
+            label="主站任务过多来不及下发",
+            instance_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3",
+        ),
+        LogicNode(
+            key="n2",
+            type="建议",
+            label="定界到主站，排查主站侧其他问题",
+            instance_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4",
+        ),
+    ]
+    graph, _ = assemble_topology(nodes, [], index)
+    fault = next(n for n in graph.nodes if n.type == "故障")
+    sug = next(n for n in graph.nodes if n.type == "建议")
+    assert fault.properties.get("故障编码") == "0010006"
+    assert "接口名称" not in fault.properties
+    assert "接口名称" not in sug.properties
+    assert "故障编码" not in sug.properties
+    assert "judgementContent" not in fault.properties
+    assert "judgementContent" not in sug.properties
+
+
+def test_assemble_copies_all_instance_data_values():
+    index = _index()
+    inst = index.instances["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"]
+    inst.data_values["备注"] = "现场已确认"
+    nodes = [
+        LogicNode(
+            key="n1",
+            type="操作",
+            label="主站召测请求下发",
+            instance_id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1",
+        )
+    ]
+    graph, _ = assemble_topology(nodes, [], index)
+    props = graph.nodes[0].properties
+    assert props.get("接口名称") == "主站召测请求报文是否成功下发"
+    assert props.get("请求方法") == "POST"
+    assert props.get("关联设备") == "主站"
+    assert props.get("备注") == "现场已确认"
+
+
+def test_merge_schema_properties_prefers_instance_values():
+    existing = {"judgementContent": "旧判断", "接口名称": "用户改过", "name": "旧名"}
+    fresh = {
+        "name": "新名",
+        "selectedObjectId": "x",
+        "接口名称": "实例值",
+        "请求方法": "POST",
+    }
+    out = merge_schema_properties(existing, fresh)
+    assert out["接口名称"] == "实例值"
+    assert out["请求方法"] == "POST"
+    assert out["name"] == "新名"
+    assert "judgementContent" not in out
+
+
+def test_merge_schema_properties_keeps_card_value_if_instance_empty():
+    existing = {"接口名称": "卡片上已有", "name": "旧名"}
+    fresh = {
+        "name": "新名",
+        "selectedObjectId": "x",
+        "接口名称": "",
+        "请求方法": "POST",
+    }
+    out = merge_schema_properties(existing, fresh)
+    assert out["接口名称"] == "卡片上已有"
+    assert out["请求方法"] == "POST"
 
 
 def test_layout_grid_and_ports():
@@ -243,6 +371,7 @@ def test_pipeline_build_from_logic():
     assert "建议" in types
     custom = next(n for n in graph.nodes if n.label == "文档独有建议")
     assert custom.properties["selectedObjectId"] == UNGROUNDED_OBJECT_ID
+    assert custom.type == "建议"
 
 
 def test_catalog_groups_by_ontology_class():

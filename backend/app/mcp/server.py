@@ -62,24 +62,34 @@ async def _stdio_loop() -> None:
             break
         if not isinstance(message, dict):
             continue
-        async with AsyncSessionLocal() as session:
-            try:
-                reply = await handle_rpc(session, message, caller="mcp")
-                await session.commit()
-            except Exception:  # noqa: BLE001
-                logger.exception("MCP request failed")
-                await session.rollback()
-                if message.get("id") is not None:
-                    _write(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": message.get("id"),
-                            "error": {"code": -32603, "message": "Internal error"},
-                        }
-                    )
-                continue
+        reply = await _dispatch_stdio(message)
         if reply is not None:
             _write(reply)
+
+
+async def _dispatch_stdio(message: dict) -> dict | None:
+    async with AsyncSessionLocal() as session:
+        try:
+            reply = await handle_rpc(session, message, caller="mcp")
+            await session.commit()
+            return reply
+        except Exception:  # noqa: BLE001
+            logger.exception("MCP request failed")
+            await session.rollback()
+            _write_internal_error(message)
+            return None
+
+
+def _write_internal_error(message: dict) -> None:
+    if message.get("id") is None:
+        return
+    _write(
+        {
+            "jsonrpc": "2.0",
+            "id": message.get("id"),
+            "error": {"code": -32603, "message": "Internal error"},
+        }
+    )
 
 
 async def _run_sse() -> None:

@@ -51,21 +51,7 @@ def run_extract_cancellable(
     register_extract_process(task_id, proc)
     proc.start()
     try:
-        while True:
-            if is_cancelled(task_id):
-                _kill(proc)
-                raise ExtractionCancelled("用户已终止抽取")
-            try:
-                kind, payload = result_queue.get(timeout=0.4)
-                break
-            except queue.Empty:
-                if proc.is_alive():
-                    continue
-                try:
-                    kind, payload = result_queue.get_nowait()
-                    break
-                except queue.Empty:
-                    raise RuntimeError("抽取进程异常退出") from None
+        kind, payload = _wait_queue_result(task_id, proc, result_queue)
         if is_cancelled(task_id):
             raise ExtractionCancelled("用户已终止抽取")
         if kind == "err":
@@ -73,10 +59,41 @@ def run_extract_cancellable(
         return InstanceExtractionResult.model_validate(payload)
     finally:
         unregister_extract_process(task_id)
+        _cleanup_proc(task_id, proc)
+
+
+def _wait_queue_result(task_id, proc, result_queue):
+    while True:
+        if is_cancelled(task_id):
+            _kill(proc)
+            raise ExtractionCancelled("用户已终止抽取")
+        got = _try_queue_get(proc, result_queue)
+        if got is not None:
+            return got
+
+
+def _try_queue_get(proc, result_queue):
+    try:
+        return result_queue.get(timeout=0.4)
+    except queue.Empty:
         if proc.is_alive():
-            if is_cancelled(task_id):
-                _kill(proc)
-            else:
-                proc.join(timeout=2)
-                if proc.is_alive():
-                    _kill(proc)
+            return None
+        return _final_queue_get(result_queue)
+
+
+def _final_queue_get(result_queue):
+    try:
+        return result_queue.get_nowait()
+    except queue.Empty:
+        raise RuntimeError("抽取进程异常退出") from None
+
+
+def _cleanup_proc(task_id, proc) -> None:
+    if not proc.is_alive():
+        return
+    if is_cancelled(task_id):
+        _kill(proc)
+        return
+    proc.join(timeout=2)
+    if proc.is_alive():
+        _kill(proc)

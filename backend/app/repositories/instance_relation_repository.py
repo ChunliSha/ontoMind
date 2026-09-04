@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.instance import InstanceRelation, OntologyInstance
@@ -83,3 +83,25 @@ class InstanceRelationRepository:
         session.add_all(objs)
         await session.flush()
         return objs
+
+    async def replace_outgoing(
+        self,
+        session: AsyncSession,
+        instance_id: uuid.UUID,
+        objs: list[InstanceRelation],
+    ) -> None:
+        await session.execute(
+            delete(InstanceRelation).where(InstanceRelation.subject_instance_id == instance_id)
+        )
+        if objs:
+            session.add_all(objs)
+        await session.flush()
+
+    async def delete_incident(self, session: AsyncSession, instance_id: uuid.UUID) -> None:
+        await session.execute(
+            delete(InstanceRelation).where(
+                (InstanceRelation.subject_instance_id == instance_id)
+                | (InstanceRelation.object_instance_id == instance_id)
+            )
+        )
+        await session.flush()

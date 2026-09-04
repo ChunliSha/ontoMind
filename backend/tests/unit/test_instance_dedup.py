@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.ai.populate_ontology_pipeline import _instance_merge_key, slug
+from app.ai.populate_ontology_pipeline import instance_merge_key, slug
 
 
 def test_slug_stable():
@@ -11,8 +11,8 @@ def test_slug_stable():
 
 
 def test_merge_key_dedupes_same_mention():
-    a = _instance_merge_key("变压器", "主变压器")
-    b = _instance_merge_key("变压器", "主变压器")
-    c = _instance_merge_key("变压器", "1号主变压器")
+    a = instance_merge_key("变压器", "主变压器")
+    b = instance_merge_key("变压器", "主变压器")
+    c = instance_merge_key("变压器", "1号主变压器")
     assert a == b
     assert a != c

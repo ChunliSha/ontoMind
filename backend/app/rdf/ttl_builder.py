@@ -115,116 +115,145 @@ def build_ttl(
     properties: list[PropertySpec],
     instances: list[InstanceSpec] | None = None,
 ) -> str:
-    g = Graph()
-    om = Namespace(base_iri)
-    g.bind("om", om)
-    g.bind("owl", OWL)
-    g.bind("rdfs", RDFS)
-    g.bind("xsd", XSD)
-
-    g.add((URIRef(base_iri.rstrip("#")), RDF.type, OWL.Ontology))
-
+    graph, namespace = _new_ontology_graph(base_iri)
     used: set[str] = set()
-    class_ln: dict[str, str] = {}
-    for c in classes:
-        ln = resolve_local_name(c.label, c.local_name, existing=used)
-        used.add(ln)
-        class_ln[c.label] = ln
-        if c.local_name:
-            class_ln[c.local_name] = ln
+    class_ln = _register_class_names(classes, used)
+    _add_class_triples(graph, namespace, classes, class_ln)
+    prop_ln = _add_property_triples(graph, namespace, properties, class_ln, used)
+    if instances:
+        _add_instance_triples(graph, namespace, instances, class_ln, prop_ln, used)
+    return graph.serialize(format="turtle")
 
-    for c in classes:
-        ln = class_ln[c.label]
-        node = om[ln]
-        g.add((node, RDF.type, OWL.Class))
-        g.add((node, RDFS.label, Literal(c.label, lang="zh")))
-        if c.description:
-            g.add((node, RDFS.comment, Literal(c.description, lang="zh")))
-        parent = c.parent_local_name
+
+def _new_ontology_graph(base_iri: str):
+    graph = Graph()
+    namespace = Namespace(base_iri)
+    graph.bind("om", namespace)
+    graph.bind("owl", OWL)
+    graph.bind("rdfs", RDFS)
+    graph.bind("xsd", XSD)
+    graph.add((URIRef(base_iri.rstrip("#")), RDF.type, OWL.Ontology))
+    return graph, namespace
+
+
+def _register_class_names(classes: list[ClassSpec], used: set[str]) -> dict[str, str]:
+    class_ln: dict[str, str] = {}
+    for cls in classes:
+        local = resolve_local_name(cls.label, cls.local_name, existing=used)
+        used.add(local)
+        class_ln[cls.label] = local
+        if cls.local_name:
+            class_ln[cls.local_name] = local
+    return class_ln
+
+
+def _add_class_triples(graph, namespace, classes: list[ClassSpec], class_ln: dict[str, str]) -> None:
+    for cls in classes:
+        local = class_ln[cls.label]
+        node = namespace[local]
+        graph.add((node, RDF.type, OWL.Class))
+        graph.add((node, RDFS.label, Literal(cls.label, lang="zh")))
+        if cls.description:
+            graph.add((node, RDFS.comment, Literal(cls.description, lang="zh")))
+        parent = cls.parent_local_name
         if parent:
             parent_ln = class_ln.get(parent, parent)
-            g.add((node, RDFS.subClassOf, om[parent_ln]))
+            graph.add((node, RDFS.subClassOf, namespace[parent_ln]))
 
+
+def _xsd_range(datatype: str | None):
+    xsd_map = {
+        "string": XSD.string,
+        "int": XSD.int,
+        "integer": XSD.integer,
+        "dateTime": XSD.dateTime,
+        "date": XSD.date,
+        "decimal": XSD.decimal,
+        "boolean": XSD.boolean,
+    }
+    key = (datatype or "xsd:string").replace("xsd:", "")
+    return xsd_map.get(key, XSD.string)
+
+
+def _add_property_triples(graph, namespace, properties, class_ln, used: set[str]) -> dict[str, str]:
     prop_ln: dict[str, str] = {}
-    for p in properties:
-        ln = resolve_local_name(p.label, p.local_name, existing=used)
-        used.add(ln)
-        prop_ln[p.label] = ln
-        if p.local_name:
-            prop_ln[p.local_name] = ln
-        node = om[ln]
-        if p.kind == "object":
-            g.add((node, RDF.type, OWL.ObjectProperty))
-            if p.range_local_name:
-                range_ln = class_ln.get(p.range_local_name, p.range_local_name)
-                g.add((node, RDFS.range, om[range_ln]))
+    for prop in properties:
+        local = resolve_local_name(prop.label, prop.local_name, existing=used)
+        used.add(local)
+        prop_ln[prop.label] = local
+        if prop.local_name:
+            prop_ln[prop.local_name] = local
+        node = namespace[local]
+        if prop.kind == "object":
+            graph.add((node, RDF.type, OWL.ObjectProperty))
+            if prop.range_local_name:
+                range_ln = class_ln.get(prop.range_local_name, prop.range_local_name)
+                graph.add((node, RDFS.range, namespace[range_ln]))
         else:
-            g.add((node, RDF.type, OWL.DatatypeProperty))
-            dt = (p.datatype or "xsd:string").replace("xsd:", "")
-            xsd_map = {
-                "string": XSD.string,
-                "int": XSD.int,
-                "integer": XSD.integer,
-                "dateTime": XSD.dateTime,
-                "date": XSD.date,
-                "decimal": XSD.decimal,
-                "boolean": XSD.boolean,
-            }
-            g.add((node, RDFS.range, xsd_map.get(dt, XSD.string)))
-        g.add((node, RDFS.label, Literal(p.label, lang="zh")))
-        domain_ln = class_ln.get(p.domain_local_name, p.domain_local_name)
-        g.add((node, RDFS.domain, om[domain_ln]))
+            graph.add((node, RDF.type, OWL.DatatypeProperty))
+            graph.add((node, RDFS.range, _xsd_range(prop.datatype)))
+        graph.add((node, RDFS.label, Literal(prop.label, lang="zh")))
+        domain_ln = class_ln.get(prop.domain_local_name, prop.domain_local_name)
+        graph.add((node, RDFS.domain, namespace[domain_ln]))
+    return prop_ln
 
-    # ---- ABox: instances + data values + object relations ----
-    if instances:
-        xsd_map = {
-            "string": XSD.string,
-            "xsd:string": XSD.string,
-            "int": XSD.int,
-            "integer": XSD.integer,
-            "xsd:integer": XSD.integer,
-            "dateTime": XSD.dateTime,
-            "xsd:dateTime": XSD.dateTime,
-            "date": XSD.date,
-            "xsd:date": XSD.date,
-            "decimal": XSD.decimal,
-            "xsd:decimal": XSD.decimal,
-            "boolean": XSD.boolean,
-            "xsd:boolean": XSD.boolean,
-        }
-        inst_nodes: dict[str, URIRef] = {}
-        for inst in instances:
-            class_ln_name = class_ln.get(inst.class_local_name, inst.class_local_name)
-            slug = (inst.local_name or "").strip()
-            if not slug or not _ASCII_RE.match(slug):
-                slug = label_to_local_name(inst.label)
-            iri_ln = f"{class_ln_name}_{slug}"
-            base_iri_ln = iri_ln
-            n = 2
-            while iri_ln in used:
-                iri_ln = f"{base_iri_ln}_{n}"
-                n += 1
-            used.add(iri_ln)
-            node = om[iri_ln]
-            inst_nodes[inst.key] = node
-            g.add((node, RDF.type, om[class_ln_name]))
-            g.add((node, RDFS.label, Literal(inst.label, lang="zh")))
 
-        for inst in instances:
-            node = inst_nodes.get(inst.key)
-            if node is None:
-                continue
-            for dv in inst.data_values or []:
-                pln = prop_ln.get(dv.property_local_name, dv.property_local_name)
-                dt = xsd_map.get((dv.datatype or "xsd:string"), XSD.string)
-                if dt == XSD.date or (dv.property_local_name or "").lower().endswith("date"):
-                    g.add((node, om[pln], Literal(dv.value, datatype=XSD.date)))
-                else:
-                    g.add((node, om[pln], Literal(dv.value, datatype=dt)))
-            for rel in inst.relations or []:
-                pln = prop_ln.get(rel.property_local_name, rel.property_local_name)
-                obj = inst_nodes.get(rel.object_key)
-                if obj is not None:
-                    g.add((node, om[pln], obj))
+def _add_instance_triples(graph, namespace, instances, class_ln, prop_ln, used: set[str]) -> None:
+    xsd_map = {
+        "string": XSD.string,
+        "xsd:string": XSD.string,
+        "int": XSD.int,
+        "integer": XSD.integer,
+        "xsd:integer": XSD.integer,
+        "dateTime": XSD.dateTime,
+        "xsd:dateTime": XSD.dateTime,
+        "date": XSD.date,
+        "xsd:date": XSD.date,
+        "decimal": XSD.decimal,
+        "xsd:decimal": XSD.decimal,
+        "boolean": XSD.boolean,
+        "xsd:boolean": XSD.boolean,
+    }
+    inst_nodes = _mint_instance_nodes(graph, namespace, instances, class_ln, used)
+    for inst in instances:
+        node = inst_nodes.get(inst.key)
+        if node is None:
+            continue
+        _add_instance_values(graph, namespace, inst, node, inst_nodes, prop_ln, xsd_map)
 
-    return g.serialize(format="turtle")
+
+def _mint_instance_nodes(graph, namespace, instances, class_ln, used: set[str]):
+    inst_nodes = {}
+    for inst in instances:
+        class_ln_name = class_ln.get(inst.class_local_name, inst.class_local_name)
+        slug = (inst.local_name or "").strip()
+        if not slug or not _ASCII_RE.match(slug):
+            slug = label_to_local_name(inst.label)
+        iri_ln = f"{class_ln_name}_{slug}"
+        base_iri_ln = iri_ln
+        seq = 2
+        while iri_ln in used:
+            iri_ln = f"{base_iri_ln}_{seq}"
+            seq += 1
+        used.add(iri_ln)
+        node = namespace[iri_ln]
+        inst_nodes[inst.key] = node
+        graph.add((node, RDF.type, namespace[class_ln_name]))
+        graph.add((node, RDFS.label, Literal(inst.label, lang="zh")))
+    return inst_nodes
+
+
+def _add_instance_values(graph, namespace, inst, node, inst_nodes, prop_ln, xsd_map) -> None:
+    for data_val in inst.data_values or []:
+        prop_local = prop_ln.get(data_val.property_local_name, data_val.property_local_name)
+        datatype = xsd_map.get((data_val.datatype or "xsd:string"), XSD.string)
+        is_date = datatype == XSD.date or (data_val.property_local_name or "").lower().endswith("date")
+        if is_date:
+            graph.add((node, namespace[prop_local], Literal(data_val.value, datatype=XSD.date)))
+        else:
+            graph.add((node, namespace[prop_local], Literal(data_val.value, datatype=datatype)))
+    for rel in inst.relations or []:
+        prop_local = prop_ln.get(rel.property_local_name, rel.property_local_name)
+        obj = inst_nodes.get(rel.object_key)
+        if obj is not None:
+            graph.add((node, namespace[prop_local], obj))

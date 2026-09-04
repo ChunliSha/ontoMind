@@ -44,6 +44,15 @@ class SparqlPlan:
 
 
 def parse_sparql_subset(query: str) -> SparqlPlan:
+    text, triples, limit = _parse_select(query)
+    for triple in triples:
+        plan = _plan_from_triple(triple, limit, text)
+        if plan is not None:
+            return plan
+    return _fallback_plan(triples, limit, text)
+
+
+def _parse_select(query: str) -> tuple[str, list, int]:
     text = (query or "").strip()
     if not text:
         raise AppError(ErrorCode.VALIDATION_ERROR, message="SPARQL 不能为空", field="query")
@@ -52,59 +61,55 @@ def parse_sparql_subset(query: str) -> SparqlPlan:
             ErrorCode.KNOWLEDGE_002,
             message="仅允许受限 SELECT + WHERE + LIMIT，禁止更新、OPTIONAL、UNION、FILTER 等算子",
         )
-    m = _SELECT_RE.match(text)
-    if not m:
+    matched = _SELECT_RE.match(text)
+    if not matched:
         raise AppError(
             ErrorCode.KNOWLEDGE_002,
             message="无法解析为 SELECT … WHERE { … } LIMIT n 子集",
         )
-    where = m.group("where").strip()
+    where = matched.group("where").strip()
     triples = list(_TRIPLE_RE.finditer(where))
     if not triples:
         raise AppError(ErrorCode.KNOWLEDGE_002, message="WHERE 中未找到三元组")
     if len(triples) > 3:
         raise AppError(ErrorCode.KNOWLEDGE_002, message="WHERE 三元组过多（最多 3 条）")
-    limit = clamp_limit(int(m.group("limit")) if m.group("limit") else 20)
+    limit = clamp_limit(int(matched.group("limit")) if matched.group("limit") else 20)
+    return text, triples, limit
 
-    # Prefer a label search triple
-    for t in triples:
-        pred = _pred_name(t.group("p"))
-        obj = t.group("o")
-        subj = t.group("s")
-        if pred in {"rdfs:label", "label", ":label"} and _is_literal(obj):
-            return SparqlPlan(
-                action="search_instances",
-                args={"q": _strip_term(obj)},
-                limit=limit,
-                raw=text,
-            )
-        if _is_iri_or_uuid(subj) and pred not in {"?p"} and not pred.startswith("?"):
-            iid = _id_from_iri(subj)
-            if _is_var(obj) or _is_iri_or_uuid(obj):
-                return SparqlPlan(
-                    action="list_relations",
-                    args={"instance_id": iid, "property_label": pred.lstrip(":")},
-                    limit=limit,
-                    raw=text,
-                )
-            return SparqlPlan(
-                action="get_instance",
-                args={"instance_id": iid},
-                limit=limit,
-                raw=text,
-            )
-        if _is_literal(obj) and not pred.startswith("?"):
-            return SparqlPlan(
-                action="search_instances",
-                args={"q": _strip_term(obj), "class_label": None},
-                limit=limit,
-                raw=text,
-            )
 
-    # Bare ?s ?p ?o would be a full scan
-    if all(_is_var(t.group("s")) and _is_var(t.group("p")) and _is_var(t.group("o")) for t in triples):
+def _plan_from_triple(triple, limit: int, text: str) -> SparqlPlan | None:
+    pred = _pred_name(triple.group("p"))
+    obj = triple.group("o")
+    subj = triple.group("s")
+    if pred in {"rdfs:label", "label", ":label"} and _is_literal(obj):
+        return SparqlPlan(action="search_instances", args={"q": _strip_term(obj)}, limit=limit, raw=text)
+    if _is_iri_or_uuid(subj) and pred not in {"?p"} and not pred.startswith("?"):
+        iid = _id_from_iri(subj)
+        if _is_var(obj) or _is_iri_or_uuid(obj):
+            return SparqlPlan(
+                action="list_relations",
+                args={"instance_id": iid, "property_label": pred.lstrip(":")},
+                limit=limit,
+                raw=text,
+            )
+        return SparqlPlan(action="get_instance", args={"instance_id": iid}, limit=limit, raw=text)
+    if _is_literal(obj) and not pred.startswith("?"):
+        return SparqlPlan(
+            action="search_instances",
+            args={"q": _strip_term(obj), "class_label": None},
+            limit=limit,
+            raw=text,
+        )
+    return None
+
+
+def _fallback_plan(triples, limit: int, text: str) -> SparqlPlan:
+    unbound = all(
+        _is_var(item.group("s")) and _is_var(item.group("p")) and _is_var(item.group("o"))
+        for item in triples
+    )
+    if unbound:
         raise AppError(ErrorCode.KNOWLEDGE_002, message="禁止无约束全表扫描")
-
     first = triples[0]
     if _is_iri_or_uuid(first.group("s")):
         return SparqlPlan(

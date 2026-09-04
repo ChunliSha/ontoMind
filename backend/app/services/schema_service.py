@@ -190,6 +190,11 @@ class SchemaService:
         props = await self.prop_repo.list_by_class(session, cls.id)
         return [await self._prop_read(session, p) for p in props]
 
+    async def list_schema_properties(self, session: AsyncSession, schema_id: str) -> list[PropertyRead]:
+        schema = await self._get_schema(session, schema_id)
+        props = await self.prop_repo.list_by_schema(session, schema.id)
+        return [await self._prop_read(session, p) for p in props]
+
     async def create_property(
         self, session: AsyncSession, class_id: str, body: PropertyCreate
     ) -> PropertyRead:
@@ -284,52 +289,57 @@ class SchemaService:
             for p in props
         ]
 
-        instance_specs: list[InstanceSpec] | None = None
+        instance_specs = None
         if include_instances:
             version = schema_version if schema_version is not None else schema.version
-            rows = await self.instance_repo.list_by_schema(
-                session, schema.id, schema_version=version, with_details=True
+            instance_specs = await self._export_instance_specs(
+                session, schema.id, version, id_to_ln, prop_id_to_ln, prop_id_to_dt
             )
-            # Only keep ABox links whose object is also in this export set
-            exported_ids = {str(r.id) for r in rows}
-            instance_specs = []
-            for r in rows:
-                class_ln = id_to_ln.get(r.class_id, "Unknown")
-                data_values = [
-                    InstanceDataValueSpec(
-                        property_local_name=prop_id_to_ln[dv.property_id],
-                        value=dv.value,
-                        datatype=prop_id_to_dt.get(dv.property_id),
-                    )
-                    for dv in (r.data_values or [])
-                    if dv.property_id in prop_id_to_ln
-                ]
-                relations = [
-                    InstanceRelationSpec(
-                        property_local_name=prop_id_to_ln.get(rel.property_id, str(rel.property_id)),
-                        object_key=str(rel.object_instance_id),
-                    )
-                    for rel in (r.subject_relations or [])
-                    if rel.property_id in prop_id_to_ln
-                    and str(rel.object_instance_id) in exported_ids
-                ]
-                instance_specs.append(
-                    InstanceSpec(
-                        key=str(r.id),
-                        class_local_name=class_ln,
-                        label=r.label,
-                        local_name=r.local_name,
-                        data_values=data_values or None,
-                        relations=relations or None,
-                    )
-                )
-
         return build_ttl(
             base_iri=schema.base_iri,
             classes=class_specs,
             properties=prop_specs,
             instances=instance_specs,
         )
+
+    async def _export_instance_specs(
+        self, session, schema_id, version, id_to_ln, prop_id_to_ln, prop_id_to_dt
+    ) -> list[InstanceSpec]:
+        rows = await self.instance_repo.list_by_schema(
+            session, schema_id, schema_version=version, with_details=True
+        )
+        exported_ids = {str(row.id) for row in rows}
+        specs: list[InstanceSpec] = []
+        for row in rows:
+            data_values = [
+                InstanceDataValueSpec(
+                    property_local_name=prop_id_to_ln[data_val.property_id],
+                    value=data_val.value,
+                    datatype=prop_id_to_dt.get(data_val.property_id),
+                )
+                for data_val in (row.data_values or [])
+                if data_val.property_id in prop_id_to_ln
+            ]
+            relations = [
+                InstanceRelationSpec(
+                    property_local_name=prop_id_to_ln.get(rel.property_id, str(rel.property_id)),
+                    object_key=str(rel.object_instance_id),
+                )
+                for rel in (row.subject_relations or [])
+                if rel.property_id in prop_id_to_ln
+                and str(rel.object_instance_id) in exported_ids
+            ]
+            specs.append(
+                InstanceSpec(
+                    key=str(row.id),
+                    class_local_name=id_to_ln.get(row.class_id, "Unknown"),
+                    label=row.label,
+                    local_name=row.local_name,
+                    data_values=data_values or None,
+                    relations=relations or None,
+                )
+            )
+        return specs
 
     async def import_ttl(self, session: AsyncSession, ttl_text: str, name: str | None = None) -> SchemaRead:
         graph = parse_ttl(ttl_text)

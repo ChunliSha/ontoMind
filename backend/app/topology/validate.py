@@ -17,23 +17,33 @@ def validate_topology(
     ids = graph.node_index()
 
     for w in graph.validate_edge_refs():
-        warnings.append({"level": "error", "code": "dangling_edge", "message": w})
+        warnings.append({"level": "error", "code": "dangling_edge", "message": warn})
 
+    out_adj, in_deg = _adjacency(graph, ids)
+    _warn_structure(warnings, out_adj, in_deg, ids, graph)
+    _warn_roles(warnings, graph, reg)
+    _warn_ungrounded(warnings, graph)
+    return warnings
+
+
+def _adjacency(graph, ids):
     out_adj: dict[str, list[str]] = defaultdict(list)
-    in_deg: dict[str, int] = {n.id: 0 for n in graph.nodes}
-    for e in graph.edges:
-        if e.source.cell in ids and e.target.cell in ids:
-            out_adj[e.source.cell].append(e.target.cell)
-            in_deg[e.target.cell] = in_deg.get(e.target.cell, 0) + 1
+    in_deg: dict[str, int] = {node.id: 0 for node in graph.nodes}
+    for edge in graph.edges:
+        if edge.source.cell in ids and edge.target.cell in ids:
+            out_adj[edge.source.cell].append(edge.target.cell)
+            in_deg[edge.target.cell] = in_deg.get(edge.target.cell, 0) + 1
+    return out_adj, in_deg
 
+
+def _warn_structure(warnings, out_adj, in_deg, ids, graph) -> None:
     if _has_cycle(out_adj, list(ids)):
         warnings.append({"level": "warning", "code": "cycle", "message": "拓扑存在环路"})
-
-    roots = [nid for nid, d in in_deg.items() if d == 0 and (out_adj.get(nid) or nid in ids)]
+    roots = [nid for nid, deg in in_deg.items() if deg == 0 and (out_adj.get(nid) or nid in ids)]
     isolated = [
-        n.id for n in graph.nodes if in_deg.get(n.id, 0) == 0 and not out_adj.get(n.id)
+        node.id for node in graph.nodes if in_deg.get(node.id, 0) == 0 and not out_adj.get(node.id)
     ]
-    connected_roots = [r for r in roots if r not in isolated]
+    connected_roots = [root for root in roots if root not in isolated]
     if len(connected_roots) > 1:
         warnings.append(
             {
@@ -51,38 +61,41 @@ def validate_topology(
             }
         )
 
-    outgoing: dict[str, list[str]] = defaultdict(list)
-    for e in graph.edges:
-        outgoing[e.source.cell].append((e.label or "").strip())
 
-    for n in graph.nodes:
-        spec = reg.get(n.type) if reg.has(n.type) else None
+def _warn_roles(warnings, graph, reg) -> None:
+    outgoing: dict[str, list[str]] = defaultdict(list)
+    for edge in graph.edges:
+        outgoing[edge.source.cell].append((edge.label or "").strip())
+    for node in graph.nodes:
+        spec = reg.get(node.type) if reg.has(node.type) else None
         if spec is None:
             continue
-        labels = outgoing.get(n.id, [])
+        labels = outgoing.get(node.id, [])
         if spec.role == "terminal" and labels:
             warnings.append(
                 {
                     "level": "warning",
                     "code": "terminal_out_edge",
-                    "message": f"建议节点「{n.label}」不应有出边",
+                    "message": f"建议节点「{node.label}」不应有出边",
                 }
             )
         if spec.role == "judgement" and labels:
-            uniq = {x for x in labels if x}
+            uniq = {item for item in labels if item}
             if uniq and not uniq <= {"是", "否"}:
                 warnings.append(
                     {
                         "level": "info",
                         "code": "branch_label",
-                        "message": f"节点「{n.label}」出边标签为 {sorted(uniq)}",
+                        "message": f"节点「{node.label}」出边标签为 {sorted(uniq)}",
                     }
                 )
 
+
+def _warn_ungrounded(warnings, graph) -> None:
     ungrounded = [
-        n.label
-        for n in graph.nodes
-        if (n.properties or {}).get("selectedObjectId") in (None, "", "自定义")
+        node.label
+        for node in graph.nodes
+        if (node.properties or {}).get("selectedObjectId") in (None, "", "自定义")
     ]
     if ungrounded:
         warnings.append(
@@ -92,7 +105,6 @@ def validate_topology(
                 "message": f"{len(ungrounded)} 个节点未落地到实例",
             }
         )
-    return warnings
 
 
 def _has_cycle(adj: dict[str, list[str]], nodes: list[str]) -> bool:

@@ -13,55 +13,79 @@ def _node_identity(node: LogicNode) -> str:
 
 def merge_logic_graphs(graphs: list[LogicGraph]) -> LogicGraph:
     merged_nodes: dict[str, LogicNode] = {}
-    key_alias: dict[str, str] = {}  # original key -> canonical key
+    key_alias: dict[str, str] = {}
     name = ""
     seq = 0
+    for graph in graphs:
+        seq, name = _ingest_graph(graph, merged_nodes, key_alias, seq, name)
+    edges = _collect_merged_edges(graphs, merged_nodes, key_alias)
+    return LogicGraph(name=name, nodes=list(merged_nodes.values()), edges=edges)
 
-    for g in graphs:
-        if g.name and not name:
-            name = g.name
-        local: dict[str, str] = {}
-        for node in g.nodes:
-            ident = _node_identity(node)
-            if ident in merged_nodes:
-                canon = merged_nodes[ident].key
-                _fill_missing(merged_nodes[ident], node)
-            else:
-                seq += 1
-                canon = node.key or f"n{seq}"
-                # Avoid key collision across chunks
-                if canon in {n.key for n in merged_nodes.values()}:
-                    canon = f"{canon}_{seq}"
-                cloned = node.model_copy(update={"key": canon})
-                merged_nodes[ident] = cloned
-            local[node.key] = merged_nodes[ident].key
-            key_alias[node.key] = merged_nodes[ident].key
 
-        for edge in g.edges:
-            src = local.get(edge.source) or key_alias.get(edge.source)
-            tgt = local.get(edge.target) or key_alias.get(edge.target)
-            if not src:
-                src = _resolve_by_label(merged_nodes, edge.source)
-            if not tgt:
-                tgt = _resolve_by_label(merged_nodes, edge.target)
-            if src and tgt:
-                key_alias[edge.source] = src
-                key_alias[edge.target] = tgt
-            # stash on graph via side channel below
-            edge.source = src or edge.source
-            edge.target = tgt or edge.target
+def _ingest_graph(
+    graph: LogicGraph,
+    merged_nodes: dict[str, LogicNode],
+    key_alias: dict[str, str],
+    seq: int,
+    name: str,
+) -> tuple[int, str]:
+    if graph.name and not name:
+        name = graph.name
+    local: dict[str, str] = {}
+    for node in graph.nodes:
+        seq = _merge_node(node, merged_nodes, local, key_alias, seq)
+    for edge in graph.edges:
+        _rewrite_edge_endpoints(edge, local, key_alias, merged_nodes)
+    return seq, name
 
+
+def _merge_node(
+    node: LogicNode,
+    merged_nodes: dict[str, LogicNode],
+    local: dict[str, str],
+    key_alias: dict[str, str],
+    seq: int,
+) -> int:
+    ident = _node_identity(node)
+    if ident in merged_nodes:
+        _fill_missing(merged_nodes[ident], node)
+    else:
+        seq += 1
+        canon = node.key or f"n{seq}"
+        if canon in {item.key for item in merged_nodes.values()}:
+            canon = f"{canon}_{seq}"
+        merged_nodes[ident] = node.model_copy(update={"key": canon})
+    local[node.key] = merged_nodes[ident].key
+    key_alias[node.key] = merged_nodes[ident].key
+    return seq
+
+
+def _rewrite_edge_endpoints(edge: LogicEdge, local, key_alias, merged_nodes) -> None:
+    src = local.get(edge.source) or key_alias.get(edge.source)
+    tgt = local.get(edge.target) or key_alias.get(edge.target)
+    if not src:
+        src = _resolve_by_label(merged_nodes, edge.source)
+    if not tgt:
+        tgt = _resolve_by_label(merged_nodes, edge.target)
+    if src and tgt:
+        key_alias[edge.source] = src
+        key_alias[edge.target] = tgt
+    edge.source = src or edge.source
+    edge.target = tgt or edge.target
+
+
+def _collect_merged_edges(graphs, merged_nodes, key_alias) -> list[LogicEdge]:
     edges: list[LogicEdge] = []
     seen: set[tuple[str, str, str]] = set()
-    for g in graphs:
-        for edge in g.edges:
+    keys = {node.key for node in merged_nodes.values()}
+    for graph in graphs:
+        for edge in graph.edges:
             src = key_alias.get(edge.source, edge.source)
             tgt = key_alias.get(edge.target, edge.target)
-            if src not in {n.key for n in merged_nodes.values()}:
+            if src not in keys:
                 src = _resolve_by_label(merged_nodes, src) or src
-            if tgt not in {n.key for n in merged_nodes.values()}:
+            if tgt not in keys:
                 tgt = _resolve_by_label(merged_nodes, tgt) or tgt
-            keys = {n.key for n in merged_nodes.values()}
             if src not in keys or tgt not in keys or src == tgt:
                 continue
             sig = (src, tgt, (edge.label or "").strip())
@@ -69,8 +93,7 @@ def merge_logic_graphs(graphs: list[LogicGraph]) -> LogicGraph:
                 continue
             seen.add(sig)
             edges.append(LogicEdge(source=src, target=tgt, label=edge.label or ""))
-
-    return LogicGraph(name=name, nodes=list(merged_nodes.values()), edges=edges)
+    return edges
 
 
 def merge_by_instance_id(graph: LogicGraph) -> LogicGraph:

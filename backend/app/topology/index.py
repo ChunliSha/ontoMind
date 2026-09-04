@@ -31,6 +31,8 @@ class IndexedClass:
     parent_class_id: str | None = None
     description: str | None = None
     instance_count: int = 0
+    data_property_labels: list[str] = field(default_factory=list)
+    object_property_labels: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

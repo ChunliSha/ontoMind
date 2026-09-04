@@ -122,60 +122,63 @@ class MappingService:
     async def save(self, session: AsyncSession, body: MappingCreate) -> MappingRead:
         if not any(b.target_kind == "instance_uri" for b in body.bindings):
             raise AppError(ErrorCode.MAPPING_001)
-
         table = await self.table_repo.get_by_id(session, parse_uuid(body.table_id))
         if not table:
             raise AppError(ErrorCode.NOT_FOUND, message="源表不存在")
+        await self._validate_binding_types(session, body, table)
+        mapping = await self._upsert_mapping(session, body)
+        mapping = await self.repo.get_by_id(session, mapping.id)
+        assert mapping is not None
+        return self._to_read(mapping)
+
+    async def _validate_binding_types(self, session, body: MappingCreate, table) -> None:
         col_types = {c.column_name: c.data_type.lower() for c in (table.columns or [])}
+        for binding in body.bindings:
+            if binding.target_kind != "property" or not binding.target_property_id:
+                continue
+            prop = await self.prop_repo.get_by_id(session, parse_uuid(binding.target_property_id))
+            if not prop or prop.kind != "data" or not prop.datatype:
+                continue
+            src = col_types.get(binding.source_column, "")
+            if not self._compatible(prop.datatype, src):
+                raise AppError(ErrorCode.MAPPING_002, field=binding.source_column)
 
-        for b in body.bindings:
-            if b.target_kind == "property" and b.target_property_id:
-                prop = await self.prop_repo.get_by_id(session, parse_uuid(b.target_property_id))
-                if prop and prop.kind == "data" and prop.datatype:
-                    src = col_types.get(b.source_column, "")
-                    if not self._compatible(prop.datatype, src):
-                        raise AppError(ErrorCode.MAPPING_002, field=b.source_column)
-
+    async def _upsert_mapping(self, session, body: MappingCreate):
         existing = await self.repo.get_by_class_table(
             session, parse_uuid(body.class_id), parse_uuid(body.table_id)
         )
         if existing:
-            mapping = existing
-            mapping.updated_at = datetime.now(timezone.utc)
-            bindings = [
-                FieldMappingBinding(
-                    target_kind=b.target_kind,
-                    target_property_id=(
-                        parse_uuid(b.target_property_id) if b.target_property_id else None
-                    ),
-                    source_column=b.source_column,
-                )
-                for b in body.bindings
-            ]
-            mapping = await self.repo.replace_bindings(session, mapping, bindings)
-        else:
-            mapping = FieldMapping(
+            existing.updated_at = datetime.now(timezone.utc)
+            return await self.repo.replace_bindings(
+                session, existing, self._bindings_from_body(body)
+            )
+        mapping = await self.repo.create(
+            session,
+            FieldMapping(
                 schema_id=parse_uuid(body.schema_id),
                 class_id=parse_uuid(body.class_id),
                 table_id=parse_uuid(body.table_id),
-            )
-            mapping = await self.repo.create(session, mapping)
-            bindings = [
-                FieldMappingBinding(
-                    mapping_id=mapping.id,
-                    target_kind=b.target_kind,
-                    target_property_id=(
-                        parse_uuid(b.target_property_id) if b.target_property_id else None
-                    ),
-                    source_column=b.source_column,
-                )
-                for b in body.bindings
-            ]
-            mapping = await self.repo.replace_bindings(session, mapping, bindings)
+            ),
+        )
+        return await self.repo.replace_bindings(
+            session, mapping, self._bindings_from_body(body, mapping.id)
+        )
 
-        mapping = await self.repo.get_by_id(session, mapping.id)
-        assert mapping is not None
-        return self._to_read(mapping)
+    @staticmethod
+    def _bindings_from_body(body: MappingCreate, mapping_id=None):
+        rows = []
+        for binding in body.bindings:
+            rows.append(
+                FieldMappingBinding(
+                    mapping_id=mapping_id,
+                    target_kind=binding.target_kind,
+                    target_property_id=(
+                        parse_uuid(binding.target_property_id) if binding.target_property_id else None
+                    ),
+                    source_column=binding.source_column,
+                )
+            )
+        return rows
 
     async def delete(self, session: AsyncSession, mapping_id: str) -> None:
         obj = await self.repo.get_by_id(session, parse_uuid(mapping_id))

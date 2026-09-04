@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppError, ErrorCode
@@ -25,7 +26,7 @@ from app.schemas.topology import (
 )
 from app.services._utils import parse_uuid, uid
 from app.services.topology_index_service import TopologyIndexService
-from app.topology.assemble import assemble_properties
+from app.topology.assemble import assemble_properties, merge_schema_properties, property_template
 from app.topology.layout import layout_topology
 from app.topology.logic_graph import LogicNode
 from app.topology.node_types import (
@@ -50,6 +51,13 @@ def _decimal(value: float | None) -> Decimal | None:
     if value is None:
         return None
     return Decimal(str(round(float(value), 2)))
+
+
+def _mounted_instance(index, node: TopologyNode):
+    inst_id = str((node.properties or {}).get("selectedObjectId") or "")
+    if inst_id in ("", UNGROUNDED_OBJECT_ID, "自定义"):
+        return None
+    return index.instances.get(inst_id)
 
 
 class TopologyService:
@@ -120,13 +128,15 @@ class TopologyService:
         obj = await self.repo.get_by_id(session, parse_uuid(id))
         if not obj:
             raise AppError(ErrorCode.NOT_FOUND, message="业务逻辑拓扑不存在")
-        return self._to_read(obj)
+        graph = await self._hydrated_graph(session, obj)
+        return self._to_read(obj, graph)
 
     async def get_by_task(self, session: AsyncSession, task_id: str) -> TopologyRead:
         obj = await self.repo.get_by_task(session, parse_uuid(task_id))
         if not obj:
             raise AppError(ErrorCode.NOT_FOUND, message="该任务尚未生成业务逻辑拓扑")
-        return self._to_read(obj)
+        graph = await self._hydrated_graph(session, obj)
+        return self._to_read(obj, graph)
 
     async def list_by_schema(
         self,
@@ -155,8 +165,7 @@ class TopologyService:
         obj = await self.repo.get_by_id(session, parse_uuid(id))
         if not obj:
             raise AppError(ErrorCode.NOT_FOUND, message="业务逻辑拓扑不存在")
-        graph = obj.graph if isinstance(obj.graph, dict) else {}
-        return graph
+        return await self._hydrated_graph(session, obj)
 
     async def patch(
         self, session: AsyncSession, id: str, body: TopologyPatchRequest
@@ -165,7 +174,12 @@ class TopologyService:
         if not obj:
             raise AppError(ErrorCode.NOT_FOUND, message="业务逻辑拓扑不存在")
         graph = TopologyGraph.from_scl(obj.graph if isinstance(obj.graph, dict) else {})
+        self._apply_patch_meta(obj, graph, body)
+        graph = await self._apply_patch_ops(session, obj, graph, body)
+        return await self._persist_patched(session, obj, graph)
 
+    @staticmethod
+    def _apply_patch_meta(obj, graph: TopologyGraph, body: TopologyPatchRequest) -> None:
         if body.name is not None:
             obj.name = body.name
             graph.name = body.name
@@ -175,6 +189,7 @@ class TopologyService:
         if body.layout_locked is not None:
             obj.layout_locked = body.layout_locked
 
+    async def _apply_patch_ops(self, session, obj, graph: TopologyGraph, body: TopologyPatchRequest):
         if body.graph is not None:
             incoming = TopologyGraph.from_scl(body.graph)
             if not obj.layout_locked and self._positions_changed(graph, incoming):
@@ -182,28 +197,26 @@ class TopologyService:
             graph = incoming
             graph.name = obj.name
             graph.description = obj.description
-
         if body.update_node is not None:
             graph = self._apply_node_write(graph, body.update_node, obj)
-
         if body.add_edge is not None:
             graph = self._add_edge(graph, body.add_edge)
-
         if body.delete_edge_ids:
             keep = {eid for eid in body.delete_edge_ids}
-            graph.edges = [e for e in graph.edges if e.id not in keep]
-
+            graph.edges = [edge for edge in graph.edges if edge.id not in keep]
         if body.remount is not None:
             graph = await self._remount(session, obj, graph, body.remount)
+        return graph
 
+    async def _persist_patched(self, session, obj, graph: TopologyGraph) -> TopologyRead:
         layout_topology(graph, locked=True)
-        now = datetime.now().isoformat(timespec="microseconds")
+        now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         graph.last_updated = now
         warnings = validate_topology(graph)
         grounded_n = sum(
             1
-            for n in graph.nodes
-            if (n.properties or {}).get("selectedObjectId") not in (None, "", UNGROUNDED_OBJECT_ID)
+            for node in graph.nodes
+            if (node.properties or {}).get("selectedObjectId") not in (None, "", UNGROUNDED_OBJECT_ID)
         )
         obj.graph = graph.to_scl()
         obj.node_count = len(graph.nodes)
@@ -284,17 +297,35 @@ class TopologyService:
             node.label = inst.label
         else:
             node.color = color_for_class(node.type or UNGROUNDED_TYPE)
-        spec = get_default_registry().get(node.type) if get_default_registry().has(node.type) else None
         logic = self._logic_from_node(node, inst.id if inst else None)
         logic.matched_by = "manual" if inst else "unmatched"
         logic.match_score = 1.0 if inst else 0.0
         if inst:
             logic.label = inst.label
             logic.type = inst.class_label
-        props = assemble_properties(logic, inst, spec.properties_template if spec else [])
+        props = assemble_properties(logic, inst, property_template(index, node.type, inst))
         node.properties = props
         await self._upsert_audit(obj, node, inst.id if inst else None, "manual" if inst else "unmatched")
         return graph
+
+    async def _hydrated_graph(self, session: AsyncSession, obj: BusinessLogicTopology) -> dict:
+        raw = obj.graph if isinstance(obj.graph, dict) else {}
+        try:
+            graph = TopologyGraph.from_scl(raw)
+        except (ValueError, ValidationError):
+            return raw
+        try:
+            index = await self.index_svc.build_index(
+                session, str(obj.schema_id), schema_version=obj.schema_version
+            )
+        except AppError:
+            return raw
+        for node in graph.nodes:
+            inst = _mounted_instance(index, node)
+            logic = self._logic_from_node(node, inst.id if inst else None)
+            fresh = assemble_properties(logic, inst, property_template(index, node.type, inst))
+            node.properties = merge_schema_properties(node.properties, fresh)
+        return graph.to_scl()
 
     def _logic_from_node(self, node: TopologyNode, instance_id: str | None) -> LogicNode:
         p = node.properties or {}
@@ -398,13 +429,14 @@ class TopologyService:
             updated_at=obj.updated_at,
         )
 
-    def _to_read(self, obj: BusinessLogicTopology) -> TopologyRead:
+    def _to_read(self, obj: BusinessLogicTopology, graph: dict | None = None) -> TopologyRead:
         validation = obj.validation if isinstance(obj.validation, dict) else {}
         summary = self._to_summary(obj)
+        raw = graph if graph is not None else (obj.graph if isinstance(obj.graph, dict) else {})
         return TopologyRead(
             **summary.model_dump(),
             source_file_ids=[str(x) for x in (obj.source_file_ids or [])],
-            graph=obj.graph if isinstance(obj.graph, dict) else {},
+            graph=raw,
             validation=validation or None,
             warnings=list(validation.get("warnings") or []),
             type_mapping={

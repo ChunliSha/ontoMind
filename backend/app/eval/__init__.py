@@ -13,43 +13,65 @@ def load_golden_set() -> list[dict[str, Any]]:
     return json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
 
 
+def _tool_ok(must: list[str], tools_used: list[str]) -> bool:
+    used = set(tools_used)
+    for name in must:
+        aliases = {name}
+        if name in {"expand_hops", "expand_neighbors"}:
+            aliases.update({"expand_hops", "expand_neighbors"})
+        if not (aliases & used):
+            return False
+    return True
+
+
+def _citation_cover(evidences: list[dict[str, Any]], answer: str) -> float:
+    if not evidences:
+        return 0.0
+    cited = 0
+    for evid in evidences:
+        evid_id = evid.get("id")
+        if f"[{evid_id}]" in answer or (evid_id and evid_id in answer):
+            cited += 1
+    return cited / len(evidences)
+
+
+def _honest_empty(item: dict[str, Any], empty: bool, answer: str) -> bool:
+    if not item.get("require_honest_empty"):
+        return True
+    has_phrase = "未找到" in answer or "没有" in answer or "无关" in answer
+    return empty and has_phrase
+
+
+def _label_hit(labels: list[str], evidences: list[dict[str, Any]]) -> bool:
+    if not labels:
+        return True
+    if not evidences:
+        return False
+    for label in labels:
+        if not any(label in (evid.get("label") or "") for evid in evidences):
+            return False
+    return True
+
+
 def score_trace(item: dict[str, Any], trace: dict[str, Any]) -> dict[str, Any]:
     """Score one planned/executed QA trace against a golden item."""
     intent_ok = (trace.get("intent") or "") == item.get("intent")
     tools_used = [t.get("tool") or t.get("name") for t in (trace.get("tool_trace") or [])]
-    must = list(item.get("must_tools") or [])
-    tool_ok = True
-    for m in must:
-        aliases = {m}
-        if m == "expand_hops":
-            aliases.add("expand_neighbors")
-        if m == "expand_neighbors":
-            aliases.add("expand_hops")
-        if not (aliases & set(tools_used)):
-            tool_ok = False
-            break
+    tool_ok = _tool_ok(list(item.get("must_tools") or []), tools_used)
     evidences = trace.get("evidences") or []
     empty = len(evidences) == 0
-    empty_ok = bool(item.get("empty_ok"))
-    honest = True
     answer = trace.get("answer") or ""
-    if item.get("require_honest_empty"):
-        honest = empty and ("未找到" in answer or "没有" in answer or "无关" in answer)
-    citation_cover = 0.0
-    if evidences:
-        cited = sum(1 for e in evidences if f"[{e.get('id')}]" in answer or (e.get("id") and e["id"] in answer))
-        citation_cover = cited / len(evidences)
+    honest = _honest_empty(item, empty, answer)
     labels = [str(x) for x in (item.get("entity_labels") or [])]
-    label_hit = all(any(lb in (e.get("label") or "") for e in evidences) for lb in labels) if labels and evidences else (not labels)
-    passed = intent_ok and tool_ok and honest and (empty_ok or not empty)
+    passed = intent_ok and tool_ok and honest and (bool(item.get("empty_ok")) or not empty)
     return {
         "id": item.get("id"),
         "passed": passed,
         "intent_ok": intent_ok,
         "tool_ok": tool_ok,
         "honest_empty": honest,
-        "citation_cover": citation_cover,
-        "label_hit": label_hit,
+        "citation_cover": _citation_cover(evidences, answer),
+        "label_hit": _label_hit(labels, evidences),
         "empty_hit": empty,
     }
 

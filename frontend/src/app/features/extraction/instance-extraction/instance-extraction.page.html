@@ -365,7 +365,7 @@
             @for (i of store.filteredInstances(); track i.id) {
               <tr>
                 <td>{{ i.label }}</td>
-                <td>{{ i.class_label || i.class_id.slice(0,8) }}</td>
+                <td>{{ i.class_label || (i.class_id ? i.class_id.slice(0, 8) : '未分类') }}</td>
                 <td>v{{ i.schema_version ?? '—' }}</td>
                 <td><ui-badge variant="b-inst">{{ sourceTypeLabel(i.source_type) }}</ui-badge></td>
                 <td>{{ i.confidence ?? '—' }}</td>
@@ -422,20 +422,108 @@
   </div>
 </ui-modal>
 
-<ui-modal [open]="detailOpen()" title="实例详情" (closed)="detailOpen.set(false)" width="560px">
+<ui-modal [open]="detailOpen()" title="编辑实例" (closed)="closeDetail()" width="680px">
   @if (store.instanceDetail(); as d) {
-    <div class="node-detail-row"><span class="k">标签</span><span class="v">{{ d.label }}</span></div>
-    <div class="node-detail-row"><span class="k">类</span><span class="v">{{ d.class_label || d.class_id }}</span></div>
-    <div class="node-detail-row"><span class="k">来源</span><span class="v">{{ d.source_type }}</span></div>
-    <h4 style="margin:14px 0 8px;font-size:13px;">数据属性</h4>
-    @for (v of d.data_values; track v.property_id + v.value) {
-      <div class="node-detail-row"><span class="k">{{ v.property_label }}</span><span class="v">{{ v.value }}</span></div>
-    }
-    <h4 style="margin:14px 0 8px;font-size:13px;">关系</h4>
-    @for (r of d.relations; track r.property_id + r.object_instance_id) {
-      <div class="node-detail-row"><span class="k">{{ r.property_label }}</span><span class="v">{{ r.object_label }}</span></div>
-    }
+    <div class="inst-edit">
+      <label class="delete-toggle">
+        <input type="checkbox" [ngModel]="pendingDelete()" (ngModelChange)="pendingDelete.set($event)" />
+        删除此实例（确认更新后生效，并级联清除指向它的对象属性）
+      </label>
+
+      <div class="node-detail-row"><span class="k">标签</span><span class="v">{{ d.label }}</span></div>
+      <div class="node-detail-row"><span class="k">来源</span><span class="v">{{ sourceTypeLabel(d.source_type) }}</span></div>
+
+      <label class="edit-field">所属类
+        <select class="form-ctl" [ngModel]="draftClassId()" (ngModelChange)="draftClassId.set($event)"
+          [disabled]="pendingDelete()">
+          <option value="">未分类（清空所属类）</option>
+          @for (c of store.classes(); track c.id) {
+            <option [value]="c.id">{{ c.label }}</option>
+          }
+        </select>
+      </label>
+
+      <div class="edit-section-head">
+        <h4>数据属性</h4>
+        <button class="btn btn-ghost btn-sm" type="button" [disabled]="pendingDelete()" (click)="addDataRow()">
+          <svg lucideIcon="plus" [size]="14"></svg>新增
+        </button>
+      </div>
+      @if (!draftData().length) {
+        <div class="edit-empty">暂无数据属性</div>
+      }
+      @for (row of draftData(); track row.key) {
+        <div class="edit-row">
+          <select class="form-ctl" [ngModel]="row.property_id"
+            (ngModelChange)="patchDataRow(row.key, { property_id: $event })" [disabled]="pendingDelete()">
+            <option value="">选择属性</option>
+            @for (p of dataProperties(); track p.id) {
+              <option [value]="p.id">{{ p.label }}</option>
+            }
+          </select>
+          <input class="form-ctl" [ngModel]="row.value"
+            (ngModelChange)="patchDataRow(row.key, { value: $event })"
+            [disabled]="pendingDelete()" placeholder="属性值" />
+          <button class="icon-btn" type="button" title="删除该数据属性" [disabled]="pendingDelete()"
+            (click)="removeDataRow(row.key)">
+            <svg lucideIcon="trash-2" [size]="14"></svg>
+          </button>
+        </div>
+      }
+
+      <div class="edit-section-head">
+        <h4>对象属性</h4>
+        <button class="btn btn-ghost btn-sm" type="button" [disabled]="pendingDelete()" (click)="addRelRow()">
+          <svg lucideIcon="plus" [size]="14"></svg>新增
+        </button>
+      </div>
+      @if (!draftRels().length) {
+        <div class="edit-empty">暂无对象属性关联</div>
+      }
+      @for (row of draftRels(); track row.key) {
+        <div class="edit-row">
+          <select class="form-ctl" [ngModel]="row.property_id"
+            (ngModelChange)="patchRelRow(row.key, { property_id: $event })" [disabled]="pendingDelete()">
+            <option value="">选择属性</option>
+            @for (p of objectProperties(); track p.id) {
+              <option [value]="p.id">{{ p.label }}</option>
+            }
+          </select>
+          <select class="form-ctl" [ngModel]="row.object_instance_id"
+            (ngModelChange)="patchRelRow(row.key, { object_instance_id: $event })" [disabled]="pendingDelete()">
+            <option value="">选择目标实例</option>
+            @if (row.object_instance_id && !hasTargetOption(row.object_instance_id)) {
+              <option [value]="row.object_instance_id">当前关联实例</option>
+            }
+            @for (t of targetInstances(); track t.id) {
+              <option [value]="t.id">{{ t.label }}{{ t.class_label ? '（' + t.class_label + '）' : '' }}</option>
+            }
+          </select>
+          <button class="icon-btn" type="button" title="删除该对象属性" [disabled]="pendingDelete()"
+            (click)="removeRelRow(row.key)">
+            <svg lucideIcon="trash-2" [size]="14"></svg>
+          </button>
+        </div>
+      }
+
+      @if (incomingRels().length) {
+        <h4 class="incoming-title">其它实例指向本实例（只读，删除本实例时会一并清除）</h4>
+        @for (r of incomingRels(); track r.property_id + r.object_instance_id) {
+          <div class="node-detail-row">
+            <span class="k">{{ relationPropertyLabel(r) }}</span>
+            <span class="v">{{ relatedInstanceLabel(r) }}</span>
+          </div>
+        }
+      }
+    </div>
   }
+  <div footer class="modal-foot-actions">
+    <button class="btn btn-ghost" type="button" (click)="closeDetail()">取消</button>
+    <button class="btn" [class.btn-primary]="!pendingDelete()" [class.btn-danger]="pendingDelete()"
+      type="button" [disabled]="savingInstance() || !store.instanceDetail()" (click)="confirmInstanceSave()">
+      {{ savingInstance() ? '保存中…' : (pendingDelete() ? '确认删除' : '确认更新') }}
+    </button>
+  </div>
 </ui-modal>
 
 <ui-modal [open]="modelModalOpen()" [title]="editingModel() ? '编辑本体模型' : '新建本体模型'" (closed)="modelModalOpen.set(false)" width="560px">

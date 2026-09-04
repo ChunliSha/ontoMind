@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from typing import Any
@@ -26,7 +27,9 @@ def extract_ontology_id(request: Request) -> str | None:
     return raw or None
 
 
-async def resolve_binding(session: AsyncSession, ontology_id: str | None) -> tuple[str | None, str | None, list[str] | None]:
+async def resolve_binding(
+    session: AsyncSession, ontology_id: str | None
+) -> tuple[str | None, str | None, list[str] | None]:
     """Return (ontology_model_id, label, allowed_tool_names)."""
     if not ontology_id:
         return None, None, None
@@ -57,23 +60,30 @@ async def handle_streamable(
 ) -> Response:
     await assert_mcp_key(session, authorization, x_api_key)
     bound_id, label, allowed = await resolve_binding(session, extract_ontology_id(request))
-
     if request.method == "DELETE":
         return Response(status_code=204, headers=_mcp_headers())
-
     if request.method == "GET":
-        accept = (request.headers.get("accept") or "").lower()
-        if "text/event-stream" in accept:
-            return StreamingResponse(_keepalive(), media_type="text/event-stream", headers=_mcp_headers())
-        return JSONResponse(
-            {
-                "server": "KnowMind",
-                "transport": "streamable-http",
-                "hint": "Cursor 请使用 type: http，对本 URL POST initialize。可用 ?ontology_id= 绑定本体。",
-            },
-            headers=_mcp_headers(),
-        )
+        return _streamable_get(request)
+    return await _streamable_post(request, session, bound_id, label, allowed)
 
+
+def _streamable_get(request: Request) -> Response:
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/event-stream" in accept:
+        return StreamingResponse(
+            _keepalive(), media_type="text/event-stream", headers=_mcp_headers()
+        )
+    return JSONResponse(
+        {
+            "server": "KnowMind",
+            "transport": "streamable-http",
+            "hint": "Cursor 请使用 type: http，对本 URL POST initialize。可用 ?ontology_id= 绑定本体。",
+        },
+        headers=_mcp_headers(),
+    )
+
+
+async def _streamable_post(request, session, bound_id, label, allowed) -> Response:
     raw = await request.body()
     if not raw.strip():
         return Response(status_code=202, headers=_mcp_headers())
@@ -85,7 +95,21 @@ async def handle_streamable(
             status_code=400,
             headers=_mcp_headers(),
         )
+    replies = await _rpc_replies(session, payload, bound_id, label, allowed)
+    if not replies:
+        return Response(status_code=202, headers=_mcp_headers())
+    body: Any = replies if isinstance(payload, list) else replies[0]
+    accept = (request.headers.get("accept") or "").lower()
+    wants_sse = "application/json" not in accept and "text/event-stream" in accept
+    if wants_sse:
+        data = json.dumps(body, ensure_ascii=False)
+        return StreamingResponse(
+            _one_message_event(data), media_type="text/event-stream", headers=_mcp_headers()
+        )
+    return JSONResponse(body, headers=_mcp_headers())
 
+
+async def _rpc_replies(session, payload, bound_id, label, allowed) -> list[dict[str, Any]]:
     messages = payload if isinstance(payload, list) else [payload]
     replies: list[dict[str, Any]] = []
     for message in messages:
@@ -101,21 +125,11 @@ async def handle_streamable(
         )
         if reply is not None:
             replies.append(reply)
+    return replies
 
-    if not replies:
-        return Response(status_code=202, headers=_mcp_headers())
 
-    body: Any = replies if isinstance(payload, list) else replies[0]
-    accept = (request.headers.get("accept") or "").lower()
-    if "application/json" not in accept and "text/event-stream" in accept:
-        data = json.dumps(body, ensure_ascii=False)
-
-        async def events():
-            yield f"event: message\ndata: {data}\n\n"
-
-        return StreamingResponse(events(), media_type="text/event-stream", headers=_mcp_headers())
-
-    return JSONResponse(body, headers=_mcp_headers())
+async def _one_message_event(data: str):
+    yield f"event: message\ndata: {data}\n\n"
 
 
 def _mcp_headers() -> dict[str, str]:
@@ -127,8 +141,6 @@ def _mcp_headers() -> dict[str, str]:
 
 async def _keepalive():
     yield ": connected\n\n"
-    import asyncio
-
     while True:
         await asyncio.sleep(20)
         yield ": ping\n\n"

@@ -60,56 +60,74 @@ def _local_of(node: URIRef) -> str:
 
 
 def extract_entities(g: Graph) -> tuple[list[ParsedClass], list[ParsedProperty]]:
+    return _parse_classes(g), _parse_properties(g)
+
+
+def _parse_classes(g: Graph) -> list[ParsedClass]:
     classes: list[ParsedClass] = []
-    for s in g.subjects(RDF.type, OWL.Class):
-        if not isinstance(s, URIRef):
+    for subj in g.subjects(RDF.type, OWL.Class):
+        if not isinstance(subj, URIRef):
             continue
-        label = _label_of(g, s)
-        local = _local_of(s) or label_to_local_name(label)
-        parent = None
-        for _, _, o in g.triples((s, RDFS.subClassOf, None)):
-            if isinstance(o, URIRef):
-                parent = _local_of(o)
-                break
+        label = _label_of(g, subj)
+        local = _local_of(subj) or label_to_local_name(label)
+        parent = _first_local(g, subj, RDFS.subClassOf)
         desc = None
-        for _, _, o in g.triples((s, RDFS.comment, None)):
-            desc = str(o)
+        for _, _, obj in g.triples((subj, RDFS.comment, None)):
+            desc = str(obj)
             break
         classes.append(
             ParsedClass(label=label, local_name=local, parent_local_name=parent, description=desc)
         )
+    return classes
 
+
+def _first_local(g: Graph, subj: URIRef, pred) -> str | None:
+    for _, _, obj in g.triples((subj, pred, None)):
+        if isinstance(obj, URIRef):
+            return _local_of(obj)
+    return None
+
+
+def _parse_properties(g: Graph) -> list[ParsedProperty]:
     properties: list[ParsedProperty] = []
     for kind, rdf_type in (("data", OWL.DatatypeProperty), ("object", OWL.ObjectProperty)):
-        for s in g.subjects(RDF.type, rdf_type):
-            if not isinstance(s, URIRef):
-                continue
-            label = _label_of(g, s)
-            local = _local_of(s) or label_to_local_name(label)
-            domain = None
-            for _, _, o in g.triples((s, RDFS.domain, None)):
-                if isinstance(o, URIRef):
-                    domain = _local_of(o)
-                    break
-            if not domain:
-                continue
-            datatype = None
-            range_ln = None
-            for _, _, o in g.triples((s, RDFS.range, None)):
-                if isinstance(o, URIRef):
-                    if kind == "data":
-                        datatype = f"xsd:{_local_of(o)}"
-                    else:
-                        range_ln = _local_of(o)
-                    break
-            properties.append(
-                ParsedProperty(
-                    label=label,
-                    local_name=local,
-                    kind=kind,
-                    domain_local_name=domain,
-                    datatype=datatype or ("xsd:string" if kind == "data" else None),
-                    range_local_name=range_ln,
-                )
-            )
-    return classes, properties
+        properties.extend(_parse_properties_of_kind(g, kind, rdf_type))
+    return properties
+
+
+def _parse_properties_of_kind(g: Graph, kind: str, rdf_type) -> list[ParsedProperty]:
+    properties: list[ParsedProperty] = []
+    for subj in g.subjects(RDF.type, rdf_type):
+        item = _parse_one_property(g, subj, kind)
+        if item is not None:
+            properties.append(item)
+    return properties
+
+
+def _parse_one_property(g: Graph, subj, kind: str) -> ParsedProperty | None:
+    if not isinstance(subj, URIRef):
+        return None
+    label = _label_of(g, subj)
+    local = _local_of(subj) or label_to_local_name(label)
+    domain = _first_local(g, subj, RDFS.domain)
+    if not domain:
+        return None
+    datatype, range_ln = _range_of(g, subj, kind)
+    return ParsedProperty(
+        label=label,
+        local_name=local,
+        kind=kind,
+        domain_local_name=domain,
+        datatype=datatype or ("xsd:string" if kind == "data" else None),
+        range_local_name=range_ln,
+    )
+
+
+def _range_of(g: Graph, subj: URIRef, kind: str) -> tuple[str | None, str | None]:
+    for _, _, obj in g.triples((subj, RDFS.range, None)):
+        if not isinstance(obj, URIRef):
+            continue
+        if kind == "data":
+            return f"xsd:{_local_of(obj)}", None
+        return None, _local_of(obj)
+    return None, None

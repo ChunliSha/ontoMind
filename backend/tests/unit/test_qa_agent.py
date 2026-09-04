@@ -7,7 +7,8 @@ import json
 import pytest
 
 from app.knowledge.evidence import Evidence, number_evidences
-from app.qa.agent import ALLOWED_INTENTS, EMPTY_ANSWER, QaAgent, _ground_search_args
+from app.qa.agent import ALLOWED_INTENTS, EMPTY_ANSWER, QaAgent
+from app.qa.tool_loop import ground_search_args
 
 
 class _FakeLLM:
@@ -109,7 +110,7 @@ def test_merge_evidences_keeps_instance_attributes():
 
 def test_ground_search_args_listing_uses_schema_class():
     labels = ["设备", "人员", "工单"]
-    out = _ground_search_args(
+    out = ground_search_args(
         {"q": "设备", "limit": 10},
         labels,
         "有哪些设备？",
@@ -120,7 +121,7 @@ def test_ground_search_args_listing_uses_schema_class():
 
 def test_ground_search_args_drops_unlisted_class_label():
     labels = ["设备", "人员", "工单"]
-    out = _ground_search_args(
+    out = ground_search_args(
         {"class_label": "天气", "q": ""},
         labels,
         "有哪些天气？",

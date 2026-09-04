@@ -108,6 +108,11 @@ async def list_properties(class_id: str, session: AsyncSession = Depends(get_ses
     return await svc.list_properties(session, class_id)
 
 
+@router.get("/schemas/{id}/properties", response_model=list[PropertyRead])
+async def list_schema_properties(id: str, session: AsyncSession = Depends(get_session)):
+    return await svc.list_schema_properties(session, id)
+
+
 @router.post(
     "/classes/{class_id}/properties",
     response_model=PropertyRead,

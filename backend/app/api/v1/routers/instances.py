@@ -7,6 +7,7 @@ from app.schemas.extraction import (
     BusinessLogicExtractionRequest,
     ExtractionTaskRead,
     InstanceRead,
+    InstanceUpdate,
     StructuredExtractionRequest,
     TaskAccepted,
     UnstructuredExtractionRequest,
@@ -15,10 +16,12 @@ from app.schemas.business_logic import BusinessLogicRuleRead
 from app.schemas.topology import TopologyRead
 from app.services.business_logic_service import BusinessLogicService
 from app.services.extraction_service import ExtractionService
+from app.services.instance_edit_service import InstanceEditService
 from app.services.topology_service import TopologyService
 
 router = APIRouter(tags=["extraction"])
 svc = ExtractionService()
+edit_svc = InstanceEditService()
 biz_svc = BusinessLogicService()
 topo_svc = TopologyService()
 
@@ -78,6 +81,18 @@ async def task_instances(
 @router.get("/instances/{id}", response_model=InstanceRead)
 async def get_instance(id: str, session: AsyncSession = Depends(get_session)):
     return await svc.get_instance(session, id)
+
+
+@router.patch("/instances/{id}", response_model=InstanceRead)
+async def update_instance(
+    id: str, body: InstanceUpdate, session: AsyncSession = Depends(get_session)
+):
+    return await edit_svc.update_instance(session, id, body)
+
+
+@router.delete("/instances/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_instance(id: str, session: AsyncSession = Depends(get_session)):
+    await edit_svc.delete_instance(session, id)
 
 
 @router.post(

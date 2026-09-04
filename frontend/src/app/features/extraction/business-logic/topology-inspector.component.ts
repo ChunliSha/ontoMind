@@ -38,21 +38,15 @@ import { EmptyStateComponent } from '../../../shared/ui/empty-state/empty-state.
         </select>
       </label>
       <button class="btn btn-primary btn-sm" type="button" [disabled]="saving" (click)="remount.emit()">应用挂载</button>
-      <label>判断内容
-        <textarea class="form-ctl" rows="4"
-          [value]="propText('judgementContent')"
-          (blur)="propBlur.emit({ key: 'judgementContent', value: $any($event.target).value })"></textarea>
-      </label>
-      <label>分析
-        <textarea class="form-ctl" rows="4"
-          [value]="propText('step1Analysis')"
-          (blur)="propBlur.emit({ key: 'step1Analysis', value: $any($event.target).value })"></textarea>
-      </label>
-      <label>描述
-        <textarea class="form-ctl" rows="4"
-          [value]="propText('description')"
-          (blur)="propBlur.emit({ key: 'description', value: $any($event.target).value })"></textarea>
-      </label>
+      @for (key of schemaFields(); track key) {
+        <label>{{ key }}
+          <textarea class="form-ctl" rows="3"
+            [value]="propText(key)"
+            (blur)="propBlur.emit({ key, value: $any($event.target).value })"></textarea>
+        </label>
+      } @empty {
+        <p class="hint">当前类没有可展示的数据属性</p>
+      }
     } @else {
       <ui-empty-state title="未选中节点" desc="点击画布中的节点可查看完整文案、改名称或挂载实例。虚线描边的是自定义节点。" />
     }
@@ -79,10 +73,43 @@ export class TopologyInspectorComponent {
   @Output() propBlur = new EventEmitter<{ key: string; value: string }>();
   @Output() close = new EventEmitter<void>();
 
+  private readonly hideKeys = new Set([
+    'name',
+    'selectedObjectId',
+    'ins_name',
+    'classId',
+    'classLabel',
+    'judgementContent',
+    'step1Analysis',
+    'step1Type',
+    'userGuideContent',
+    'summaryContent',
+    'description',
+  ]);
+
+  schemaFields(): string[] {
+    const props = this.node?.properties;
+    if (!props) {
+      return [];
+    }
+    return Object.keys(props).filter((key) => this.isVisibleKey(key));
+  }
+
   propText(key: string): string {
     const v = this.node?.properties?.[key];
     if (v == null) return '';
-    if (typeof v === 'object') return JSON.stringify(v);
+    if (typeof v === 'object') {
+      const rec = v as { name?: unknown };
+      if (rec.name != null) return String(rec.name);
+      return JSON.stringify(v);
+    }
     return String(v);
+  }
+
+  private isVisibleKey(key: string): boolean {
+    if (this.hideKeys.has(key)) {
+      return false;
+    }
+    return !key.endsWith('_id') && !key.endsWith('_model');
   }
 }

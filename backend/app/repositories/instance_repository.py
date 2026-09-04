@@ -282,6 +282,29 @@ class InstanceRepository:
         )
         return [(r[0], r[1], r[2]) for r in result.all()]
 
+    async def delete(self, session: AsyncSession, obj: OntologyInstance) -> None:
+        await session.delete(obj)
+        await session.flush()
+
+    async def count_null_class(
+        self,
+        session: AsyncSession,
+        schema_id: uuid.UUID,
+        *,
+        schema_version: int | None = None,
+    ) -> int:
+        filt = [
+            OntologyInstance.schema_id == schema_id,
+            OntologyInstance.class_id.is_(None),
+        ]
+        if schema_version is not None:
+            filt.append(OntologyInstance.schema_version == schema_version)
+        return (
+            await session.execute(
+                select(func.count()).select_from(OntologyInstance).where(*filt)
+            )
+        ).scalar_one()
+
     async def count_for_class(self, session: AsyncSession, class_id: uuid.UUID) -> int:
         return (
             await session.execute(

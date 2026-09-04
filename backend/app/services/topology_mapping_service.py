@@ -79,26 +79,7 @@ class TopologyMappingService:
         index = await self.index_svc.build_index(
             session, schema_id, schema_version=schema_version
         )
-        by_class: list[TypeCatalogItemRead] = []
-        for cls in sorted(index.classes.values(), key=lambda c: c.label):
-            insts = [
-                CatalogInstanceRead(
-                    id=i.id,
-                    label=i.label,
-                    local_name=i.local_name,
-                    class_id=i.class_id,
-                    class_label=i.class_label,
-                )
-                for i in index.instances_for_class(cls.id)
-            ]
-            insts.sort(key=lambda x: x.label)
-            by_class.append(
-                TypeCatalogItemRead(
-                    type_key=cls.label,
-                    class_ids=[cls.id],
-                    instances=insts[:per_type_limit],
-                )
-            )
+        by_class = _catalog_by_class(index, per_type_limit)
         mapping_items = [
             TypeMappingItemRead(
                 type_key=item.type_key,
@@ -113,14 +94,40 @@ class TopologyMappingService:
             schema_version=index.schema_version,
             mapping=mapping_items,
             by_type=by_class,
-            instances=[
-                CatalogInstanceRead(
-                    id=i.id,
-                    label=i.label,
-                    local_name=i.local_name,
-                    class_id=i.class_id,
-                    class_label=i.class_label,
-                )
-                for i in sorted(index.instances.values(), key=lambda x: x.label)
-            ][: max(per_type_limit * 4, 400)],
+            instances=_catalog_instances(index, max(per_type_limit * 4, 400)),
         )
+
+
+def _catalog_instance(inst) -> CatalogInstanceRead:
+    return CatalogInstanceRead(
+        id=inst.id,
+        label=inst.label,
+        local_name=inst.local_name,
+        class_id=inst.class_id,
+        class_label=inst.class_label,
+    )
+
+
+def _label_of(item) -> str:
+    return item.label
+
+
+def _catalog_by_class(index, per_type_limit: int) -> list[TypeCatalogItemRead]:
+    by_class: list[TypeCatalogItemRead] = []
+    for cls in sorted(index.classes.values(), key=_label_of):
+        insts = [_catalog_instance(item) for item in index.instances_for_class(cls.id)]
+        insts.sort(key=_label_of)
+        by_class.append(
+            TypeCatalogItemRead(
+                type_key=cls.label,
+                class_ids=[cls.id],
+                instances=insts[:per_type_limit],
+            )
+        )
+    return by_class
+
+
+def _catalog_instances(index, cap: int) -> list[CatalogInstanceRead]:
+    rows = [_catalog_instance(item) for item in index.instances.values()]
+    rows.sort(key=_label_of)
+    return rows[:cap]

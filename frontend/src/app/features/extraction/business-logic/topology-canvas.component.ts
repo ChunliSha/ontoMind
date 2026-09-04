@@ -199,9 +199,35 @@ export class TopologyCanvasComponent implements OnChanges, AfterViewInit, OnDest
 
   nodeSnippet(node: TopologyNode): string {
     if (this.isUngrounded(node)) return '未落地 · 请在右侧挂载实例';
-    const extra = node.properties?.['judgementContent'] ?? node.properties?.['description'];
-    if (extra != null && String(extra).trim()) return String(extra);
+    const hide = new Set([
+      'name',
+      'selectedObjectId',
+      'ins_name',
+      'classId',
+      'classLabel',
+      'judgementContent',
+      'step1Analysis',
+      'step1Type',
+      'userGuideContent',
+      'summaryContent',
+      'description',
+    ]);
+    for (const [key, raw] of Object.entries(node.properties || {})) {
+      if (hide.has(key) || key.endsWith('_id') || key.endsWith('_model')) continue;
+      const text = this.propSnippet(raw);
+      if (text) return `${key}：${text}`;
+    }
     return '已挂载实例';
+  }
+
+  private propSnippet(raw: unknown): string {
+    if (raw == null || raw === '') return '';
+    if (typeof raw === 'object') {
+      const rec = raw as { name?: unknown };
+      if (rec.name != null) return String(rec.name).trim();
+      return '';
+    }
+    return String(raw).trim();
   }
 
   fitView(): void {

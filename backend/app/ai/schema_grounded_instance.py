@@ -24,6 +24,7 @@ from app.ai.base import (
     InstanceExtractionResult,
     SchemaSnapshot,
 )
+from app.ai.json_util import parse_json_object
 from app.ai.prompts.instance_grounded import (
     INSTANCE_NER_SYSTEM,
     INSTANCE_RELATION_SYSTEM,
@@ -268,22 +269,6 @@ def _chunk_text(text: str, max_chars: int = _MAX_CHARS, overlap: int = _CHUNK_OV
     return chunks
 
 
-def _parse_json_object(raw: str) -> dict[str, Any]:
-    import json
-
-    text = (raw or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.I | re.M).strip()
-    if text and not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("JSON root must be object")
-    return data
-
-
 def _schema_indexes(snapshot: SchemaSnapshot) -> dict[str, Any]:
     class_pairs: list[tuple[str, str | None]] = []
     object_pairs: list[tuple[str, str | None]] = []
@@ -313,7 +298,7 @@ def _schema_indexes(snapshot: SchemaSnapshot) -> dict[str, Any]:
 
 async def _chat_json(chat: ChatFn, system: str, user: str) -> dict[str, Any]:
     raw = await chat(system, user, timeout=180.0)
-    return _parse_json_object(raw)
+    return parse_json_object(raw)
 
 
 async def _extract_entities_chunk(
@@ -417,50 +402,61 @@ def _map_to_instances(
     indexes: dict[str, Any],
     source_text: str,
 ) -> list[ExtractedInstance]:
-    class_index: dict[str, str] = indexes["class_index"]
-    object_index: dict[str, str] = indexes["object_index"]
-    data_index: dict[str, str] = indexes["data_index"]
+    mapper = _InstanceMapper(indexes, source_text)
+    mapper.seed_entities(entities)
+    mapper.apply_relations(relations)
+    mapper.apply_triplets(triplets)
+    return mapper.values()
 
-    # mention text → entity (class-normalized); instances keyed like extract mint_iri
-    mentions: dict[str, _EntityHit] = {}
-    instances: dict[tuple[str, str], ExtractedInstance] = {}
 
-    for ent in entities:
-        class_label = _normalize_term(ent.label, class_index)
-        if not class_label:
-            continue
-        text = ent.text.strip()
-        if not text:
-            continue
-        unit = _as_unit_confidence(ent.confidence)
-        mentions[text] = _EntityHit(text=text, label=class_label, confidence=unit)
-        key = _instance_merge_key(class_label, text)
-        prev = instances.get(key)
-        if prev is None:
-            instances[key] = ExtractedInstance(
-                class_label=class_label,
-                label=text,
-                local_name=_slug(text),
-                confidence=round(unit * 100, 2),
-                data_values=[],
-                relations=[],
-            )
-        elif (unit * 100) > (prev.confidence or 0):
-            prev.confidence = round(unit * 100, 2)
+class _InstanceMapper:
+    def __init__(self, indexes: dict[str, Any], source_text: str) -> None:
+        self.class_index: dict[str, str] = indexes["class_index"]
+        self.object_index: dict[str, str] = indexes["object_index"]
+        self.data_index: dict[str, str] = indexes["data_index"]
+        self.source_text = source_text
+        self.mentions: dict[str, _EntityHit] = {}
+        self.instances: dict[tuple[str, str], ExtractedInstance] = {}
 
-    def ensure_instance(mention: str, fallback_class: str | None = None) -> ExtractedInstance | None:
-        hit = _resolve_mention(mention, mentions)
+    def values(self) -> list[ExtractedInstance]:
+        return list(self.instances.values())
+
+    def seed_entities(self, entities: list[_EntityHit]) -> None:
+        for ent in entities:
+            class_label = _normalize_term(ent.label, self.class_index)
+            text = ent.text.strip()
+            if not class_label or not text:
+                continue
+            unit = _as_unit_confidence(ent.confidence)
+            self.mentions[text] = _EntityHit(text=text, label=class_label, confidence=unit)
+            key = _instance_merge_key(class_label, text)
+            prev = self.instances.get(key)
+            if prev is None:
+                self.instances[key] = ExtractedInstance(
+                    class_label=class_label,
+                    label=text,
+                    local_name=_slug(text),
+                    confidence=round(unit * 100, 2),
+                    data_values=[],
+                    relations=[],
+                )
+            elif (unit * 100) > (prev.confidence or 0):
+                prev.confidence = round(unit * 100, 2)
+
+    def ensure_instance(self, mention: str, fallback_class: str | None = None) -> ExtractedInstance | None:
+        hit = _resolve_mention(mention, self.mentions)
         text = (hit.text if hit else mention).strip()
         if not text:
             return None
         class_label = hit.label if hit else fallback_class
-        if not class_label or class_label not in set(class_index.values()):
+        if not class_label or class_label not in set(self.class_index.values()):
             return None
         key = _instance_merge_key(class_label, text)
-        if key in instances:
-            return instances[key]
+        existing = self.instances.get(key)
+        if existing is not None:
+            return existing
         unit = _as_unit_confidence(hit.confidence if hit else 0.8)
-        instances[key] = ExtractedInstance(
+        inst = ExtractedInstance(
             class_label=class_label,
             label=text,
             local_name=_slug(text),
@@ -468,47 +464,52 @@ def _map_to_instances(
             data_values=[],
             relations=[],
         )
-        return instances[key]
+        self.instances[key] = inst
+        return inst
 
-    def add_object(subj: str, pred: str, obj: str) -> None:
-        predicate = _normalize_term(pred, object_index)
+    def add_object(self, subj: str, pred: str, obj: str) -> None:
+        predicate = _normalize_term(pred, self.object_index)
         if not predicate:
             return
-        src = ensure_instance(subj)
-        dst = ensure_instance(obj)
+        src = self.ensure_instance(subj)
+        dst = self.ensure_instance(obj)
         if not src or not dst:
             return
-        if any(
-            r.property_label == predicate and r.target_instance_label == dst.label
-            for r in src.relations
-        ):
+        already = any(
+            rel.property_label == predicate and rel.target_instance_label == dst.label
+            for rel in src.relations
+        )
+        if already:
             return
         src.relations.append(
             ExtractedRelation(property_label=predicate, target_instance_label=dst.label)
         )
 
-    def add_data(subj: str, pred: str, value: str) -> None:
-        predicate = _normalize_term(pred, data_index)
-        src = ensure_instance(subj)
+    def add_data(self, subj: str, pred: str, value: str) -> None:
+        predicate = _normalize_term(pred, self.data_index)
+        src = self.ensure_instance(subj)
         if not predicate or not src or not value:
             return
-        if not is_value_grounded_in_text(value, source_text):
+        if not is_value_grounded_in_text(value, self.source_text):
             logger.info("drop ungrounded data value %s=%r", predicate, value)
             return
-        if any(d.property_label == predicate and d.value == value for d in src.data_values):
+        already = any(
+            item.property_label == predicate and item.value == value for item in src.data_values
+        )
+        if already:
             return
         src.data_values.append(ExtractedDataValue(property_label=predicate, value=value))
 
-    for rel in relations:
-        add_object(rel.subject, rel.predicate, rel.object)
+    def apply_relations(self, relations: list[_RelationHit]) -> None:
+        for rel in relations:
+            self.add_object(rel.subject, rel.predicate, rel.object)
 
-    for tri in triplets:
-        if _normalize_term(tri.predicate, object_index):
-            add_object(tri.subject, tri.predicate, tri.object)
-        elif _normalize_term(tri.predicate, data_index):
-            add_data(tri.subject, tri.predicate, tri.object)
-
-    return list(instances.values())
+    def apply_triplets(self, triplets: list[_TripletHit]) -> None:
+        for tri in triplets:
+            if _normalize_term(tri.predicate, self.object_index):
+                self.add_object(tri.subject, tri.predicate, tri.object)
+            elif _normalize_term(tri.predicate, self.data_index):
+                self.add_data(tri.subject, tri.predicate, tri.object)
 
 
 async def extract_instances_schema_grounded(
@@ -520,59 +521,59 @@ async def extract_instances_schema_grounded(
     indexes = _schema_indexes(schema_snapshot)
     if not indexes["class_hints"]:
         return InstanceExtractionResult(instances=[])
-
-    all_instances: list[ExtractedInstance] = []
-    # Merge by (class_label, label) across texts
     merged: dict[tuple[str, str], ExtractedInstance] = {}
-
     for text in texts:
         usable = (text or "").strip()
         if not usable:
             continue
-        entities: list[_EntityHit] = []
-        for chunk in _chunk_text(usable):
-            entities.extend(await _extract_entities_chunk(chat, chunk, indexes["class_hints"]))
-
-        # de-dupe entities by text
-        uniq: dict[str, _EntityHit] = {}
-        for e in entities:
-            prev = uniq.get(e.text)
-            if not prev or e.confidence > prev.confidence:
-                uniq[e.text] = e
-        entities = list(uniq.values())
-
-        relations = await _extract_relations(
-            chat, usable, entities, indexes["object_hints"]
-        )
-        triplets = await _extract_triplets(
-            chat,
-            usable,
-            entities,
-            relations,
-            indexes["object_hints"],
-            indexes["data_hints"],
-        )
-        mapped = _map_to_instances(entities, relations, triplets, indexes, usable)
+        mapped = await _extract_one_text(usable, indexes, chat)
         for inst in mapped:
-            key = _instance_merge_key(inst.class_label, inst.label)
-            existing = merged.get(key)
-            if not existing:
-                merged[key] = inst
-                continue
-            # keep higher confidence
-            if (inst.confidence or 0) > (existing.confidence or 0):
-                existing.confidence = inst.confidence
-            # merge props/relations
-            seen_dv = {(d.property_label, d.value) for d in existing.data_values}
-            for d in inst.data_values:
-                if (d.property_label, d.value) not in seen_dv:
-                    existing.data_values.append(d)
-            seen_rel = {
-                (r.property_label, r.target_instance_label) for r in existing.relations
-            }
-            for r in inst.relations:
-                if (r.property_label, r.target_instance_label) not in seen_rel:
-                    existing.relations.append(r)
+            _merge_schema_instance(merged, inst)
+    return InstanceExtractionResult(instances=list(merged.values()))
 
-    all_instances = list(merged.values())
-    return InstanceExtractionResult(instances=all_instances)
+
+async def _extract_one_text(usable: str, indexes: dict[str, Any], chat: ChatFn) -> list[ExtractedInstance]:
+    entities: list[_EntityHit] = []
+    for chunk in _chunk_text(usable):
+        entities.extend(await _extract_entities_chunk(chat, chunk, indexes["class_hints"]))
+    uniq: dict[str, _EntityHit] = {}
+    for ent in entities:
+        prev = uniq.get(ent.text)
+        if not prev or ent.confidence > prev.confidence:
+            uniq[ent.text] = ent
+    relations = await _extract_relations(chat, usable, list(uniq.values()), indexes["object_hints"])
+    triplets = await _extract_triplets(
+        chat,
+        usable,
+        list(uniq.values()),
+        relations,
+        indexes["object_hints"],
+        indexes["data_hints"],
+    )
+    return _map_to_instances(list(uniq.values()), relations, triplets, indexes, usable)
+
+
+def _merge_schema_instance(
+    merged: dict[tuple[str, str], ExtractedInstance], inst: ExtractedInstance
+) -> None:
+    key = _instance_merge_key(inst.class_label, inst.label)
+    existing = merged.get(key)
+    if existing is None:
+        merged[key] = inst
+        return
+    if (inst.confidence or 0) > (existing.confidence or 0):
+        existing.confidence = inst.confidence
+    seen_dv = {(item.property_label, item.value) for item in existing.data_values}
+    for data_val in inst.data_values:
+        pair = (data_val.property_label, data_val.value)
+        if pair not in seen_dv:
+            existing.data_values.append(data_val)
+            seen_dv.add(pair)
+    seen_rel = {
+        (rel.property_label, rel.target_instance_label) for rel in existing.relations
+    }
+    for rel in inst.relations:
+        pair = (rel.property_label, rel.target_instance_label)
+        if pair not in seen_rel:
+            existing.relations.append(rel)
+            seen_rel.add(pair)

@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -13,13 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.ai import resolve_llm_provider
-from app.ai.openai_compatible_provider import OpenAICompatibleProvider, _parse_json_object
+from app.ai.json_util import parse_json_object
+from app.ai.openai_compatible_provider import OpenAICompatibleProvider
 from app.core.config import settings
 from app.core.exceptions import AppError, ErrorCode
 from app.knowledge.access_log import log_access
 from app.knowledge.class_link import is_list_question, link_class_label
-from app.knowledge.evidence import Evidence, merge_evidences, number_evidences
-from app.knowledge.limits import clamp_hops, clamp_limit, clamp_nodes
+from app.knowledge.evidence import Evidence, number_evidences
 from app.knowledge.service import KnowledgeService
 from app.models.knowledge import QaMessage, QaSession
 from app.qa.prompts import (
@@ -30,6 +31,7 @@ from app.qa.prompts import (
     generate_user_prompt,
     plan_user_prompt,
 )
+from app.qa.tool_loop import QaToolMixin
 from app.schemas.common import PageResponse
 from app.schemas.qa import QaChatResponse, QaMessageRead, QaSessionRead, QaSessionSummary
 from app.services._utils import parse_uuid, uid
@@ -56,7 +58,20 @@ ALLOWED_INTENTS = {
 EMPTY_ANSWER = "知识库中未找到相关信息。"
 
 
-class QaAgent:
+@dataclass
+class ChatPrep:
+    obj: QaSession
+    query: str
+    provider: OpenAICompatibleProvider
+    schema: Any
+    plan: dict[str, Any]
+    intent: str
+    caller: str
+    trace: str
+    started: float
+
+
+class QaAgent(QaToolMixin):
     def __init__(self) -> None:
         self.ks = KnowledgeService()
 
@@ -156,11 +171,29 @@ class QaAgent:
         caller: str = "qa",
         trace_id: str = "",
     ) -> QaChatResponse:
-        obj = await self._load_session(session, session_id)
-        q = (question or "").strip()
-        if not q:
-            raise AppError(ErrorCode.VALIDATION_ERROR, message="请输入问题", field="question")
+        prep = await self._begin_chat(
+            session, session_id, question, model_id=model_id, caller=caller, trace_id=trace_id
+        )
+        user_msg = QaMessage(session_id=prep.obj.id, role="user", content=prep.query)
+        session.add(user_msg)
+        await session.flush()
+        answer, evidences, tool_trace = await self._answer_from_plan(session, prep)
+        return await self._commit_chat(session, prep, answer, evidences, tool_trace, model_id)
 
+    async def _begin_chat(
+        self,
+        session: AsyncSession,
+        session_id: str,
+        question: str,
+        *,
+        model_id: str | None,
+        caller: str,
+        trace_id: str,
+    ) -> ChatPrep:
+        obj = await self._load_session(session, session_id)
+        query = (question or "").strip()
+        if not query:
+            raise AppError(ErrorCode.VALIDATION_ERROR, message="请输入问题", field="question")
         started = time.perf_counter()
         ontology_model_id = str(obj.ontology_model_id)
         trace = trace_id or uuid.uuid4().hex[:16]
@@ -168,101 +201,115 @@ class QaAgent:
         provider = await resolve_llm_provider(session, llm_model_id)
         if not isinstance(provider, OpenAICompatibleProvider):
             raise AppError(ErrorCode.LLM_003, message="当前模型不支持知识问答")
-
         schema = await self.ks.get_schema(
             session, ontology_model_id, caller=caller, trace_id=trace
         )
-        schema_summary = self._schema_summary(schema.model_dump())
-        history = self._history_text(list(obj.messages or [])[-8:])
-        resolved = json.dumps(obj.resolved_entities or {}, ensure_ascii=False)
-
         plan = await self._plan(
             provider,
-            question=q,
-            schema_summary=schema_summary,
-            history=history,
-            resolved_entities=resolved,
+            question=query,
+            schema_summary=self._schema_summary(schema.model_dump()),
+            history=self._history_text(list(obj.messages or [])[-8:]),
+            resolved_entities=json.dumps(obj.resolved_entities or {}, ensure_ascii=False),
         )
         intent = plan.get("intent") if isinstance(plan.get("intent"), str) else "lookup_entity"
         if intent not in ALLOWED_INTENTS:
             intent = "lookup_entity"
         plan["intent"] = intent
-
-        user_msg = QaMessage(session_id=obj.id, role="user", content=q)
-        session.add(user_msg)
-        await session.flush()
-
-        if intent == "chitchat_reject":
-            answer = "该问题与当前本体知识无关，我只能根据已绑定的本体模型回答事实问题。"
-            evidences: list[Evidence] = []
-            tool_trace: list[dict[str, Any]] = []
-        else:
-            evidences, tool_trace, focus = await self._run_tools(
-                session,
-                ontology_model_id,
-                plan,
-                obj.resolved_entities or {},
-                provider=provider,
-                class_labels=[c.label for c in schema.classes],
-                question=q,
-                caller=caller,
-                trace_id=trace,
-                session_id=str(obj.id),
-            )
-            if focus:
-                merged = dict(obj.resolved_entities or {})
-                merged.update(focus)
-                obj.resolved_entities = merged
-            empty = len(evidences) == 0
-            tools_failed = bool(tool_trace) and all(not t.get("ok") for t in tool_trace)
-            if empty and tools_failed:
-                answer = "检索未能完成，请稍后重试。"
-            else:
-                answer = await self._generate(
-                    provider, question=q, plan=plan, evidences=evidences, empty=empty
-                )
-                if empty:
-                    if "未找到" not in answer and "没有" not in answer:
-                        answer = EMPTY_ANSWER
-
-        evidences = number_evidences(evidences)
-        assistant = QaMessage(
-            session_id=obj.id,
-            role="assistant",
-            content=answer,
-            evidences=[e.model_dump() for e in evidences],
+        return ChatPrep(
+            obj=obj,
+            query=query,
+            provider=provider,
+            schema=schema,
             plan=plan,
-            tool_trace=tool_trace,
+            intent=intent,
+            caller=caller,
+            trace=trace,
+            started=started,
         )
-        session.add(assistant)
-        if not obj.title:
-            obj.title = q[:80]
+
+    async def _answer_from_plan(self, session, prep: ChatPrep):
+        if prep.intent == "chitchat_reject":
+            answer = "该问题与当前本体知识无关，我只能根据已绑定的本体模型回答事实问题。"
+            return answer, [], []
+        evidences, tool_trace, focus = await self._run_tools(
+            session,
+            str(prep.obj.ontology_model_id),
+            prep.plan,
+            prep.obj.resolved_entities or {},
+            provider=prep.provider,
+            class_labels=[cls.label for cls in prep.schema.classes],
+            question=prep.query,
+            caller=prep.caller,
+            trace_id=prep.trace,
+            session_id=str(prep.obj.id),
+        )
+        if focus:
+            merged = dict(prep.obj.resolved_entities or {})
+            merged.update(focus)
+            prep.obj.resolved_entities = merged
+        empty = len(evidences) == 0
+        tools_failed = bool(tool_trace) and all(not item.get("ok") for item in tool_trace)
+        if empty and tools_failed:
+            return "检索未能完成，请稍后重试。", evidences, tool_trace
+        answer = await self._generate(
+            prep.provider,
+            question=prep.query,
+            plan=prep.plan,
+            evidences=evidences,
+            empty=empty,
+        )
+        if empty and "未找到" not in answer and "没有" not in answer:
+            answer = EMPTY_ANSWER
+        return answer, evidences, tool_trace
+
+    async def _commit_chat(
+        self,
+        session,
+        prep: ChatPrep,
+        answer,
+        evidences,
+        tool_trace,
+        model_id,
+    ) -> QaChatResponse:
+        evidences = number_evidences(evidences)
+        session.add(
+            QaMessage(
+                session_id=prep.obj.id,
+                role="assistant",
+                content=answer,
+                evidences=[item.model_dump() for item in evidences],
+                plan=prep.plan,
+                tool_trace=tool_trace,
+            )
+        )
+        if not prep.obj.title:
+            prep.obj.title = prep.query[:80]
+        llm_model_id = model_id or uid(prep.obj.llm_model_id)
         if llm_model_id:
             try:
-                obj.llm_model_id = parse_uuid(llm_model_id)
+                prep.obj.llm_model_id = parse_uuid(llm_model_id)
             except AppError:
-                pass
+                logger.warning("invalid llm_model_id on QA session: %s", llm_model_id)
         await session.flush()
-
         await log_access(
             session,
-            caller=caller,
+            caller=prep.caller,
             tool_name="ask_knowledge",
-            ontology_model_id=obj.ontology_model_id,
-            session_id=obj.id,
-            trace_id=trace,
-            plan=plan,
-            latency_ms=int((time.perf_counter() - started) * 1000),
+            ontology_model_id=prep.obj.ontology_model_id,
+            session_id=prep.obj.id,
+            trace_id=prep.trace,
+            plan=prep.plan,
+            latency_ms=int((time.perf_counter() - prep.started) * 1000),
             empty_hit=len(evidences) == 0,
-            request_meta={"intent": intent, "tool_steps": len(tool_trace)},
+            request_meta={"intent": prep.intent, "tool_steps": len(tool_trace)},
         )
         return QaChatResponse(
-            session_id=str(obj.id),
+            session_id=str(prep.obj.id),
             answer=answer,
             evidences=evidences,
-            plan=plan,
+            plan=prep.plan,
             tool_trace=tool_trace,
-            resolved_entities=obj.resolved_entities,
+            resolved_entities=prep.obj.resolved_entities,
         )
 
     async def ask_direct(
@@ -310,32 +357,20 @@ class QaAgent:
             temperature=0.1,
         )
         try:
-            data = _parse_json_object(raw)
-        except Exception:  # noqa: BLE001
+            data = parse_json_object(raw)
+        except (json.JSONDecodeError, ValueError, TypeError):
             logger.warning("QA plan JSON parse failed: %s", raw[:300])
             data = {
                 "intent": "lookup_entity",
                 "focus_labels": [question[:40]],
                 "tools": [{"name": "search_instances", "args": {"q": question[:80], "limit": 10}}],
             }
-        tools = data.get("tools")
-        if not isinstance(tools, list):
-            tools = []
-        cleaned = []
-        for t in tools[: int(settings.QA_MAX_TOOL_STEPS)]:
-            if not isinstance(t, dict):
-                continue
-            name = str(t.get("name") or "")
-            if name == "expand_neighbors":
-                name = "expand_hops"
-            if name not in ALLOWED_TOOLS:
-                continue
-            args = t.get("args") if isinstance(t.get("args"), dict) else {}
-            cleaned.append({"name": name, "args": args})
-        data["tools"] = cleaned
-        if data.get("intent") == "schema_explain" and not any(t["name"] == "get_schema" for t in cleaned):
-            data["tools"] = [{"name": "get_schema", "args": {}}] + cleaned
-        if data.get("intent") == "lookup_entity" and not cleaned:
+        data["tools"] = _normalize_plan_tools(data.get("tools"), question)
+        if data.get("intent") == "schema_explain" and not any(
+            item["name"] == "get_schema" for item in data["tools"]
+        ):
+            data["tools"] = [{"name": "get_schema", "args": {}}] + data["tools"]
+        if data.get("intent") == "lookup_entity" and not data["tools"]:
             data["tools"] = [{"name": "search_instances", "args": {"q": question[:80], "limit": 10}}]
         return data
 
@@ -363,190 +398,6 @@ class QaAgent:
             temperature=0.15,
         )
         return (text or "").strip() or (EMPTY_ANSWER if empty else "（模型未返回回答）")
-
-    async def _run_tools(
-        self,
-        session: AsyncSession,
-        ontology_model_id: str,
-        plan: dict[str, Any],
-        resolved: dict[str, Any],
-        *,
-        provider: OpenAICompatibleProvider | None = None,
-        class_labels: list[str] | None = None,
-        question: str = "",
-        caller: str,
-        trace_id: str,
-        session_id: str,
-    ) -> tuple[list[Evidence], list[dict[str, Any]], dict[str, Any]]:
-        last_ids: list[str] = []
-        focus_inst = (resolved.get("焦点") or resolved.get("focus") or {}) if isinstance(resolved, dict) else {}
-        if isinstance(focus_inst, dict) and focus_inst.get("id"):
-            last_ids = [str(focus_inst["id"])]
-        evidences: list[Evidence] = []
-        trace: list[dict[str, Any]] = []
-        focus: dict[str, Any] = {}
-        whitelist_preds = self._object_property_labels_from_plan(plan)
-
-        for step in plan.get("tools") or []:
-            name = step["name"]
-            args = dict(step.get("args") or {})
-            t0 = time.perf_counter()
-            error = None
-            summary: Any = None
-            try:
-                if name == "search_instances":
-                    args = _ground_search_args(args, class_labels or [], question)
-                    args = await self._ensure_class_scope(
-                        provider,
-                        args,
-                        class_labels or [],
-                        question,
-                    )
-                    q = str(args.get("q") or args.get("query") or "")
-                    list_limit = 20 if (not q or is_list_question(question)) else 8
-                    resp = await self.ks.search_instances(
-                        session,
-                        ontology_model_id,
-                        q=q,
-                        class_label=args.get("class_label"),
-                        class_id=args.get("class_id") if _is_uuid(args.get("class_id")) else None,
-                        limit=clamp_limit(args.get("limit"), default=list_limit),
-                        caller=caller,
-                        trace_id=trace_id,
-                        session_id=session_id,
-                    )
-                    if resp.empty_hit and not args.get("class_label") and is_list_question(question):
-                        retry_label = link_class_label(question or q, class_labels or [])
-                        if not retry_label:
-                            retry_label = await self._link_class_via_llm(
-                                provider, question or q, class_labels or []
-                            )
-                        if retry_label:
-                            resp = await self.ks.search_instances(
-                                session,
-                                ontology_model_id,
-                                q="",
-                                class_label=retry_label,
-                                limit=clamp_limit(args.get("limit"), default=20),
-                                caller=caller,
-                                trace_id=trace_id,
-                                session_id=session_id,
-                            )
-                            args = {**args, "class_label": retry_label, "q": ""}
-                    last_ids = [h.id for h in resp.items[:5]]
-                    evidences.extend(resp.evidences)
-                    summary = {"count": len(resp.items), "ids": last_ids[:5], "labels": [h.label for h in resp.items[:5]]}
-                    if resp.items:
-                        focus["焦点"] = {
-                            "id": resp.items[0].id,
-                            "label": resp.items[0].label,
-                            "class_label": resp.items[0].class_label,
-                        }
-                elif name == "get_instance":
-                    iid = str(args.get("instance_id") or args.get("id") or (last_ids[0] if last_ids else ""))
-                    if not iid:
-                        raise AppError(ErrorCode.VALIDATION_ERROR, message="缺少 instance_id")
-                    detail = await self.ks.get_instance(
-                        session,
-                        ontology_model_id,
-                        iid,
-                        caller=caller,
-                        trace_id=trace_id,
-                        session_id=session_id,
-                    )
-                    last_ids = [detail.id]
-                    evidences.extend(detail.evidences)
-                    summary = {"id": detail.id, "label": detail.label, "class_label": detail.class_label}
-                    focus["焦点"] = {"id": detail.id, "label": detail.label, "class_label": detail.class_label}
-                elif name == "list_relations":
-                    iid = str(args.get("instance_id") or args.get("id") or (last_ids[0] if last_ids else ""))
-                    if not iid:
-                        raise AppError(ErrorCode.VALIDATION_ERROR, message="缺少 instance_id")
-                    rels = await self.ks.list_relations(
-                        session,
-                        ontology_model_id,
-                        iid,
-                        property_id=args.get("property_id") if _is_uuid(args.get("property_id")) else None,
-                        property_label=args.get("property_label"),
-                        caller=caller,
-                        trace_id=trace_id,
-                        session_id=session_id,
-                    )
-                    last_ids = [iid] + [r.other_instance_id for r in rels[:8]]
-                    for r in rels[:12]:
-                        evidences.append(
-                            Evidence(
-                                id="",
-                                kind="relation",
-                                entity_id=r.other_instance_id,
-                                label=r.other_instance_label or r.other_instance_id,
-                                class_label=r.other_class_label,
-                                properties={
-                                    "predicate": r.property_label,
-                                    "direction": r.direction,
-                                },
-                            )
-                        )
-                    summary = {"count": len(rels), "labels": [r.other_instance_label for r in rels[:8]]}
-                elif name in ("expand_hops", "expand_neighbors"):
-                    starts = args.get("start_ids") or last_ids[:3]
-                    if isinstance(starts, str):
-                        starts = [starts]
-                    hops = clamp_hops(args.get("max_hops") or 2)
-                    preds = args.get("predicates")
-                    if isinstance(preds, str):
-                        preds = [preds]
-                    if whitelist_preds and preds:
-                        preds = [p for p in preds if p in whitelist_preds] or None
-                    resp = await self.ks.expand_hops(
-                        session,
-                        ontology_model_id,
-                        [str(s) for s in starts],
-                        max_hops=hops,
-                        max_nodes=clamp_nodes(args.get("max_nodes")),
-                        predicates=preds,
-                        caller=caller,
-                        trace_id=trace_id,
-                        session_id=session_id,
-                    )
-                    last_ids = [n.id for n in resp.nodes[:8]]
-                    evidences.extend(resp.evidences)
-                    summary = {"nodes": len(resp.nodes), "links": len(resp.links), "truncated": resp.truncated}
-                elif name == "get_schema":
-                    sch = await self.ks.get_schema(
-                        session, ontology_model_id, caller=caller, trace_id=trace_id
-                    )
-                    evidences.append(
-                        Evidence(
-                            id="",
-                            kind="schema",
-                            entity_id=sch.ontology_model_id,
-                            label=sch.ontology_model_name,
-                            properties={
-                                "class_count": len(sch.classes),
-                                "property_count": len(sch.properties),
-                            },
-                        )
-                    )
-                    summary = {"classes": [c.label for c in sch.classes[:30]]}
-            except AppError as exc:
-                error = exc.message
-                summary = {"error": exc.message, "code": exc.code.value}
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("QA tool %s failed", name)
-                error = str(exc)
-                summary = {"error": str(exc)}
-            trace.append(
-                {
-                    "tool": name,
-                    "args": args,
-                    "ok": error is None,
-                    "latency_ms": int((time.perf_counter() - t0) * 1000),
-                    "result": summary,
-                    "error": error,
-                }
-            )
-        return merge_evidences(evidences), trace, focus
 
     async def _load_session(self, session: AsyncSession, session_id: str) -> QaSession:
         result = await session.execute(
@@ -603,7 +454,7 @@ class QaAgent:
                 use_json_object=True,
                 temperature=0.0,
             )
-            data = _parse_json_object(raw)
+            data = parse_json_object(raw)
         except Exception:  # noqa: BLE001
             logger.warning("QA class-link JSON parse failed")
             return None
@@ -663,43 +514,21 @@ class QaAgent:
             ],
         )
 
-
-def _ground_search_args(args: dict[str, Any], class_labels: list[str], question: str) -> dict[str, Any]:
-    """Bind planner class/q onto Schema class labels; listing questions drop keyword q."""
-    out = dict(args)
-    labels = class_labels or []
-    cl = str(out.get("class_label") or "").strip()
-    q = str(out.get("q") or out.get("query") or "").strip()
-    if cl:
-        linked = link_class_label(cl, labels)
-        if linked:
-            out["class_label"] = linked
-        elif cl not in labels:
-            # Planner used a spoken type word that is not a Schema class.
-            out.pop("class_label", None)
-            cl = ""
-    if not out.get("class_label") and (q or question):
-        linked = link_class_label(q or question, labels) or link_class_label(question, labels)
-        if linked and (is_list_question(question) or is_list_question(q) or not q):
-            out["class_label"] = linked
-            if is_list_question(question) or is_list_question(q):
-                out["q"] = ""
-        elif linked and len(q) <= 4 and not any(ch.isdigit() for ch in q):
-            out["class_label"] = linked
-            out["q"] = ""
-    if out.get("class_label") and is_list_question(question):
-        out["q"] = ""
-    return out
-
-
-def _is_uuid(value: Any) -> bool:
-    if not value or not isinstance(value, str):
-        return False
-    try:
-        uuid.UUID(value)
-        return True
-    except ValueError:
-        return False
+def _normalize_plan_tools(tools: Any, question: str) -> list[dict[str, Any]]:
+    if not isinstance(tools, list):
+        tools = []
+    cleaned: list[dict[str, Any]] = []
+    for item in tools[: int(settings.QA_MAX_TOOL_STEPS)]:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "")
+        if name == "expand_neighbors":
+            name = "expand_hops"
+        if name not in ALLOWED_TOOLS:
+            continue
+        args = item.get("args") if isinstance(item.get("args"), dict) else {}
+        cleaned.append({"name": name, "args": args})
+    return cleaned
 
 
 def _evidence_list(raw: Any) -> list[Evidence]:
@@ -707,6 +536,6 @@ def _evidence_list(raw: Any) -> list[Evidence]:
     for item in raw or []:
         try:
             out.append(Evidence.model_validate(item))
-        except Exception:  # noqa: BLE001
-            continue
+        except (TypeError, ValueError) as exc:
+            logger.warning("skip invalid evidence payload: %s", exc)
     return out

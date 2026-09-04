@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 import time
 import uuid
 from typing import Any
@@ -20,40 +19,21 @@ from app.ai.base import (
     SchemaInductionResult,
     SchemaSnapshot,
 )
-from app.ai.prompts.business_logic_topology import TOPOLOGY_RETRY, TOPOLOGY_SYSTEM
+from app.ai.extract_job import run_extract_cancellable
+from app.ai.json_util import parse_json_object
+from app.ai.populate_ontology_pipeline import extract_instances_sync
+from app.ai.prompts.business_logic_topology import (
+    catalog_type_instruction,
+    render_topology_retry,
+    render_topology_system,
+)
 from app.ai.prompts.schema_induction import SCHEMA_INDUCTION_RETRY, SCHEMA_INDUCTION_SYSTEM
-from app.topology.logic_graph import LogicGraph, logic_graph_from_llm
 from app.core.config import settings
 from app.core.exceptions import AppError, ErrorCode
+from app.tasks.runner import ExtractionCancelled
+from app.topology.logic_graph import LogicGraph, logic_graph_from_llm
 
 logger = logging.getLogger(__name__)
-
-_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE | re.MULTILINE)
-
-
-def _strip_json_fences(raw: str) -> str:
-    text = (raw or "").strip()
-    if text.startswith("```"):
-        text = _FENCE_RE.sub("", text).strip()
-    # 兜底：截取第一个 { 到最后一个 }
-    if text and not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-    return text
-
-
-def _parse_json_object(raw: str) -> dict[str, Any]:
-    text = _strip_json_fences(raw)
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("模型返回的 JSON 不是对象")
-    # 兼容常见错误嵌套：{"schema":{...}} / {"result":{...}} / {"data":{...}}
-    for key in ("schema", "result", "data", "output"):
-        nested = data.get(key)
-        if isinstance(nested, dict) and ("classes" in nested or "properties" in nested):
-            return nested
-    return data
 
 
 class OpenAICompatibleProvider:
@@ -123,7 +103,6 @@ class OpenAICompatibleProvider:
             resp = await client.post(
                 f"{self.api_base}/chat/completions", headers=headers, json=payload
             )
-            # 部分本地网关不支持 response_format，降级重试
             if resp.status_code in (400, 422) and use_json_object:
                 logger.warning("response_format unsupported, retry without it: %s", resp.text[:200])
                 return await self._chat(
@@ -134,18 +113,68 @@ class OpenAICompatibleProvider:
                     temperature=temperature,
                 )
             resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            if isinstance(content, list):
-                # 部分兼容实现返回 content parts
-                parts = []
-                for p in content:
-                    if isinstance(p, dict) and p.get("type") == "text":
-                        parts.append(p.get("text") or "")
-                    elif isinstance(p, str):
-                        parts.append(p)
-                content = "".join(parts)
-            return str(content or "")
+            return _message_text(resp.json())
+
+    @staticmethod
+    def _clip_texts(usable: list[str], budget: int = 12000, max_docs: int = 5) -> list[str]:
+        clipped: list[str] = []
+        remain = budget
+        for text in usable[:max_docs]:
+            if remain <= 0:
+                break
+            chunk = text[:remain]
+            clipped.append(chunk)
+            remain -= len(chunk)
+        return clipped
+
+    @staticmethod
+    def _latency_ms(started: float) -> int:
+        return int((time.perf_counter() - started) * 1000)
+
+    async def _json_attempts(self, system: str, retry_suffix: str, user_msg: str, timeout: float, parse_ok):
+        last_error = "request failed"
+        messages_user = user_msg
+        for attempt in range(3):
+            try:
+                sys_prompt = system if attempt == 0 else f"{system}\n\n{retry_suffix}"
+                if attempt > 0:
+                    messages_user = f"{user_msg}\n\n上次错误：{last_error}\n请按契约重新输出。"
+                raw = await self._chat(sys_prompt, messages_user, timeout=timeout)
+                data = parse_json_object(raw)
+                result, err = parse_ok(data, raw, attempt)
+                if err:
+                    last_error = err
+                    continue
+                return result, None
+            except (ValidationError, json.JSONDecodeError, ValueError, KeyError, httpx.HTTPError) as exc:
+                last_error = str(exc)
+                logger.warning("llm json attempt %s failed: %s", attempt + 1, last_error)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                logger.exception("llm json unexpected error")
+                break
+        return None, last_error
+
+    @staticmethod
+    def _parse_schema(data, raw, attempt):
+        result = SchemaInductionResult.model_validate(data)
+        if result.classes:
+            return result, None
+        logger.warning("induce_schema empty classes (attempt %s): %s", attempt + 1, raw[:500])
+        return None, "classes 为空，未归纳出任何本体类"
+
+    @staticmethod
+    def _parse_topology(data, raw, attempt):
+        graph = logic_graph_from_llm(data)
+        if graph.nodes:
+            return graph, None
+        logger.warning(
+            "extract_business_logic_topology empty nodes (attempt %s): %s",
+            attempt + 1,
+            raw[:500],
+        )
+        return None, "nodes 为空，未抽取出任何业务逻辑节点"
 
     async def induce_schema(
         self, texts: list[str], existing_classes: list[str]
@@ -156,67 +185,22 @@ class OpenAICompatibleProvider:
             return AIResult(
                 success=False,
                 error="文档无可抽取文本（请确认非结构化文件已解析完成）",
-                latency_ms=int((time.perf_counter() - started) * 1000),
+                latency_ms=self._latency_ms(started),
             )
-
-        # 控制上下文长度，优先用靠前文档
-        clipped: list[str] = []
-        budget = 12000
-        for t in usable[:5]:
-            if budget <= 0:
-                break
-            chunk = t[:budget]
-            clipped.append(chunk)
-            budget -= len(chunk)
-
         user_msg = (
             f"已有类（请勿重复）：{existing_classes!r}\n\n"
-            f"文档内容：\n" + "\n\n---\n\n".join(clipped)
+            f"文档内容：\n" + "\n\n---\n\n".join(self._clip_texts(usable))
         )
-
-        last_error = "schema induction failed"
-        messages_user = user_msg
-        for attempt in range(3):
-            try:
-                system = SCHEMA_INDUCTION_SYSTEM if attempt == 0 else (
-                    SCHEMA_INDUCTION_SYSTEM + "\n\n" + SCHEMA_INDUCTION_RETRY
-                )
-                if attempt > 0:
-                    messages_user = (
-                        f"{user_msg}\n\n上次错误：{last_error}\n请按契约重新输出。"
-                    )
-                raw = await self._chat(system, messages_user, timeout=180.0)
-                data = _parse_json_object(raw)
-                result = SchemaInductionResult.model_validate(data)
-                if not result.classes:
-                    last_error = "classes 为空，未归纳出任何本体类"
-                    logger.warning(
-                        "induce_schema empty classes (attempt %s): %s",
-                        attempt + 1,
-                        raw[:500],
-                    )
-                    continue
-                return AIResult(
-                    success=True,
-                    result=result,
-                    latency_ms=int((time.perf_counter() - started) * 1000),
-                )
-            except (ValidationError, json.JSONDecodeError, ValueError, KeyError, httpx.HTTPError) as exc:
-                last_error = str(exc)
-                logger.warning(
-                    "induce_schema attempt %s failed: %s", attempt + 1, last_error
-                )
-                continue
-            except Exception as exc:  # noqa: BLE001
-                last_error = str(exc)
-                logger.exception("induce_schema unexpected error")
-                break
-
-        return AIResult(
-            success=False,
-            error=last_error,
-            latency_ms=int((time.perf_counter() - started) * 1000),
+        result, last_error = await self._json_attempts(
+            SCHEMA_INDUCTION_SYSTEM,
+            SCHEMA_INDUCTION_RETRY,
+            user_msg,
+            180.0,
+            self._parse_schema,
         )
+        if result is not None:
+            return AIResult(success=True, result=result, latency_ms=self._latency_ms(started))
+        return AIResult(success=False, error=last_error, latency_ms=self._latency_ms(started))
 
     async def extract_instances(
         self,
@@ -227,10 +211,6 @@ class OpenAICompatibleProvider:
         """Semantica pipeline (adapted from extract/populate_ontology.py)."""
         started = time.perf_counter()
         try:
-            from app.ai.extract_job import run_extract_cancellable
-            from app.ai.populate_ontology_pipeline import extract_instances_sync
-            from app.tasks.runner import ExtractionCancelled
-
             kwargs = {
                 "provider": "openai",
                 "llm_model": self.model,
@@ -276,7 +256,7 @@ class OpenAICompatibleProvider:
                 "You extract business logic rules as JSON array under key business_logic.",
                 f"texts={texts[:3]!r}\ninstances={instance_labels!r}",
             )
-            data = _parse_json_object(raw)
+            data = parse_json_object(raw)
             items = data.get("business_logic", data if isinstance(data, list) else [])
             rules = [BusinessLogicRuleDraft.model_validate(x) for x in items]
             return AIResult(
@@ -285,6 +265,7 @@ class OpenAICompatibleProvider:
                 latency_ms=int((time.perf_counter() - started) * 1000),
             )
         except Exception as exc:  # noqa: BLE001
+            logger.exception("extract_business_logic failed")
             return AIResult(
                 success=False,
                 error=str(exc),
@@ -302,64 +283,48 @@ class OpenAICompatibleProvider:
             return AIResult(
                 success=False,
                 error="文档无可抽取文本",
-                latency_ms=int((time.perf_counter() - started) * 1000),
+                latency_ms=self._latency_ms(started),
             )
-
-        class_keys = list(catalog_by_class.keys())
-        clipped_catalog: dict[str, list[dict[str, str]]] = {}
-        for class_key, items in catalog_by_class.items():
-            clipped_catalog[class_key] = [
-                {"id": x.get("id", ""), "label": (x.get("label") or "")[:80]}
-                for x in items[:80]
-            ]
+        clipped_catalog = _clip_catalog(catalog_by_class)
         user_msg = (
-            f"本体类与候选实例（按类名分组，节点 type 使用类名，instance_ref 优先用 id）：\n"
+            "本体类与候选实例（按类名分组）。"
+            f"{catalog_type_instruction(clipped_catalog)}\n"
             f"{json.dumps(clipped_catalog, ensure_ascii=False)}\n\n"
             f"文档内容：\n{chunk[:8000]}"
         )
-
-        last_error = "business logic topology extraction failed"
-        messages_user = user_msg
-        for attempt in range(3):
-            try:
-                system = (
-                    TOPOLOGY_SYSTEM
-                    if attempt == 0
-                    else TOPOLOGY_SYSTEM + "\n\n" + TOPOLOGY_RETRY
-                )
-                if attempt > 0:
-                    messages_user = f"{user_msg}\n\n上次错误：{last_error}\n请按契约重新输出。"
-                raw = await self._chat(system, messages_user, timeout=180.0)
-                data = _parse_json_object(raw)
-                graph = logic_graph_from_llm(data)
-                if not graph.nodes:
-                    last_error = "nodes 为空，未抽取出任何业务逻辑节点"
-                    logger.warning(
-                        "extract_business_logic_topology empty nodes (attempt %s): %s",
-                        attempt + 1,
-                        raw[:500],
-                    )
-                    continue
-                return AIResult(
-                    success=True,
-                    result=graph,
-                    latency_ms=int((time.perf_counter() - started) * 1000),
-                )
-            except (ValidationError, json.JSONDecodeError, ValueError, KeyError, httpx.HTTPError) as exc:
-                last_error = str(exc)
-                logger.warning(
-                    "extract_business_logic_topology attempt %s failed: %s",
-                    attempt + 1,
-                    last_error,
-                )
-                continue
-            except Exception as exc:  # noqa: BLE001
-                last_error = str(exc)
-                logger.exception("extract_business_logic_topology unexpected error")
-                break
-
-        return AIResult(
-            success=False,
-            error=last_error,
-            latency_ms=int((time.perf_counter() - started) * 1000),
+        result, last_error = await self._json_attempts(
+            render_topology_system(clipped_catalog),
+            render_topology_retry(clipped_catalog),
+            user_msg,
+            180.0,
+            self._parse_topology,
         )
+        if result is not None:
+            return AIResult(success=True, result=result, latency_ms=self._latency_ms(started))
+        return AIResult(success=False, error=last_error, latency_ms=self._latency_ms(started))
+
+
+def _message_text(data: dict[str, Any]) -> str:
+    content = data["choices"][0]["message"]["content"]
+    if not isinstance(content, list):
+        return str(content or "")
+    parts = [_part_text(part) for part in content]
+    return str("".join(parts) or "")
+
+
+def _part_text(part: Any) -> str:
+    if isinstance(part, dict) and part.get("type") == "text":
+        return part.get("text") or ""
+    if isinstance(part, str):
+        return part
+    return ""
+
+
+def _clip_catalog(catalog_by_class: dict[str, list[dict[str, str]]]) -> dict[str, list[dict[str, str]]]:
+    clipped: dict[str, list[dict[str, str]]] = {}
+    for class_key, items in catalog_by_class.items():
+        clipped[class_key] = [
+            {"id": item.get("id", ""), "label": (item.get("label") or "")[:80]}
+            for item in items[:80]
+        ]
+    return clipped

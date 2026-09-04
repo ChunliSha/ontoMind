@@ -76,23 +76,7 @@ async def handle_rpc(
     if method and str(method).startswith("notifications/"):
         return None
     if method == "initialize":
-        requested = params.get("protocolVersion") if isinstance(params, dict) else None
-        instructions = "KnowMind 知识 MCP。工具参数需要 ontology_model_id，或先调用 list_ontology_models。"
-        if ontology_model_id:
-            label = ontology_label or ontology_model_id
-            instructions = (
-                f"本连接已绑定本体「{label}」（{ontology_model_id}）。"
-                "调用工具时无需再传 ontology_model_id。"
-            )
-        return _result(
-            msg_id,
-            {
-                "protocolVersion": negotiate_protocol_version(str(requested) if requested else None),
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": SERVER_INFO,
-                "instructions": instructions,
-            },
-        )
+        return _handle_initialize(msg_id, params, ontology_model_id, ontology_label)
     if method == "ping":
         return _result(msg_id, {})
     if method == "tools/list":
@@ -106,25 +90,53 @@ async def handle_rpc(
             },
         )
     if method == "tools/call":
-        name = str(params.get("name") or "")
-        if allowed_tools is not None and name not in allowed_tools:
-            return _error(msg_id, -32601, f"Method not found: {name}")
-        arguments = apply_bound_ontology(
-            params.get("arguments") if isinstance(params.get("arguments"), dict) else {},
-            ontology_model_id,
-        )
-        payload = await call_tool(session, name, arguments, caller=caller)
-        text = json.dumps(payload, ensure_ascii=False)
-        is_error = not payload.get("ok", False)
-        return _result(
-            msg_id,
-            {
-                "content": [{"type": "text", "text": text}],
-                "isError": is_error,
-                "structuredContent": payload,
-            },
+        return await _handle_tools_call(
+            session, msg_id, params, caller, ontology_model_id, allowed_tools
         )
     return _error(msg_id, -32601, f"Method not found: {method}")
+
+
+def _handle_initialize(msg_id, params, ontology_model_id, ontology_label) -> dict[str, Any]:
+    requested = params.get("protocolVersion") if isinstance(params, dict) else None
+    instructions = "KnowMind 知识 MCP。工具参数需要 ontology_model_id，或先调用 list_ontology_models。"
+    if ontology_model_id:
+        label = ontology_label or ontology_model_id
+        instructions = (
+            f"本连接已绑定本体「{label}」（{ontology_model_id}）。"
+            "调用工具时无需再传 ontology_model_id。"
+        )
+    return _result(
+        msg_id,
+        {
+            "protocolVersion": negotiate_protocol_version(str(requested) if requested else None),
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": SERVER_INFO,
+            "instructions": instructions,
+        },
+    )
+
+
+async def _handle_tools_call(
+    session, msg_id, params, caller, ontology_model_id, allowed_tools
+) -> dict[str, Any]:
+    name = str(params.get("name") or "")
+    if allowed_tools is not None and name not in allowed_tools:
+        return _error(msg_id, -32601, f"Method not found: {name}")
+    arguments = apply_bound_ontology(
+        params.get("arguments") if isinstance(params.get("arguments"), dict) else {},
+        ontology_model_id,
+    )
+    payload = await call_tool(session, name, arguments, caller=caller)
+    text = json.dumps(payload, ensure_ascii=False)
+    is_error = not payload.get("ok", False)
+    return _result(
+        msg_id,
+        {
+            "content": [{"type": "text", "text": text}],
+            "isError": is_error,
+            "structuredContent": payload,
+        },
+    )
 
 
 def _result(msg_id: Any, result: Any) -> dict[str, Any]:

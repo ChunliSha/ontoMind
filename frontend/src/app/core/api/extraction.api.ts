@@ -10,6 +10,7 @@ import {
   InstanceRead,
   InstanceStat,
   InstanceStatsResponse,
+  InstanceUpdate,
   StructuredExtractionRequest,
   UnstructuredExtractionRequest,
 } from '../models/extraction';
@@ -63,6 +64,14 @@ export class ExtractionApi {
 
   instanceDetail(id: string): Observable<InstanceDetail> {
     return this.api.get<InstanceDetail>(`/instances/${id}`);
+  }
+
+  updateInstance(id: string, body: InstanceUpdate): Observable<InstanceDetail> {
+    return this.api.patch<InstanceDetail>(`/instances/${id}`, body);
+  }
+
+  deleteInstance(id: string): Observable<void> {
+    return this.api.delete<void>(`/instances/${id}`);
   }
 
   instanceStats(schemaId: string): Observable<InstanceStat[]> {

@@ -10,9 +10,24 @@ import { ModalComponent } from '../../../shared/ui/modal/modal.component';
 import { EmptyStateComponent } from '../../../shared/ui/empty-state/empty-state.component';
 import { TargetProperty, MappingRead } from '../../../core/models/mapping';
 import { OntologyModelRead } from '../../../core/models/ontology-model';
+import { InstanceDetail } from '../../../core/models/extraction';
+import { PropertyRead } from '../../../core/models/schema';
 import { SchemasApi } from '../../../core/api/schemas.api';
 import { ConfirmDialogService } from '../../../core/services/confirm-dialog.service';
+import { ToastService } from '../../../core/services/toast.service';
 import { LucideDynamicIcon } from '@lucide/angular';
+
+interface DraftDataRow {
+  key: string;
+  property_id: string;
+  value: string;
+}
+
+interface DraftRelRow {
+  key: string;
+  property_id: string;
+  object_instance_id: string;
+}
 
 @Component({
   selector: 'app-instance-extraction-page',
@@ -29,8 +44,15 @@ export class InstanceExtractionPage implements OnInit {
   readonly store = inject(InstanceExtractionStore);
   private readonly schemasApi = inject(SchemasApi);
   private readonly confirm = inject(ConfirmDialogService);
+  private readonly toast = inject(ToastService);
   readonly mappingOpen = signal(false);
   readonly detailOpen = signal(false);
+  readonly savingInstance = signal(false);
+  readonly pendingDelete = signal(false);
+  readonly draftClassId = signal('');
+  readonly draftData = signal<DraftDataRow[]>([]);
+  readonly draftRels = signal<DraftRelRow[]>([]);
+  readonly incomingRels = signal<InstanceDetail['relations']>([]);
   readonly modelModalOpen = signal(false);
   readonly editingModel = signal<OntologyModelRead | null>(null);
   readonly dragSource = signal<string | null>(null);
@@ -83,8 +105,147 @@ export class InstanceExtractionPage implements OnInit {
   }
 
   showDetail(id: string): void {
-    this.store.loadInstance(id);
+    this.pendingDelete.set(false);
+    this.savingInstance.set(false);
+    this.store.loadInstance(id, (d) => this.hydrateDraft(d));
     this.detailOpen.set(true);
+  }
+
+  private hydrateDraft(d: InstanceDetail): void {
+    this.draftClassId.set(d.class_id || '');
+    this.pendingDelete.set(false);
+    this.draftData.set(
+      (d.data_values || []).map((v) => ({
+        key: crypto.randomUUID(),
+        property_id: v.property_id,
+        value: v.value,
+      })),
+    );
+    this.draftRels.set(
+      (d.relations || [])
+        .filter((r) => (r.direction || 'out') === 'out')
+        .map((r) => ({
+          key: crypto.randomUUID(),
+          property_id: r.property_id,
+          object_instance_id: r.object_instance_id,
+        })),
+    );
+    this.incomingRels.set((d.relations || []).filter((r) => r.direction === 'in'));
+  }
+
+  closeDetail(): void {
+    this.detailOpen.set(false);
+    this.pendingDelete.set(false);
+  }
+
+  dataProperties(): PropertyRead[] {
+    return this.store.schemaProperties().filter((p) => p.kind === 'data');
+  }
+
+  objectProperties(): PropertyRead[] {
+    return this.store.schemaProperties().filter((p) => p.kind === 'object');
+  }
+
+  targetInstances() {
+    return this.store.editCandidates();
+  }
+
+  hasTargetOption(instanceId: string): boolean {
+    return this.store.editCandidates().some((t) => t.id === instanceId);
+  }
+
+  addDataRow(): void {
+    this.draftData.update((rows) => [
+      ...rows,
+      { key: crypto.randomUUID(), property_id: '', value: '' },
+    ]);
+  }
+
+  removeDataRow(key: string): void {
+    this.draftData.update((rows) => rows.filter((r) => r.key !== key));
+  }
+
+  patchDataRow(key: string, patch: Partial<DraftDataRow>): void {
+    this.draftData.update((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  addRelRow(): void {
+    this.draftRels.update((rows) => [
+      ...rows,
+      { key: crypto.randomUUID(), property_id: '', object_instance_id: '' },
+    ]);
+  }
+
+  removeRelRow(key: string): void {
+    this.draftRels.update((rows) => rows.filter((r) => r.key !== key));
+  }
+
+  patchRelRow(key: string, patch: Partial<DraftRelRow>): void {
+    this.draftRels.update((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  }
+
+  confirmInstanceSave(): void {
+    const detail = this.store.instanceDetail();
+    if (!detail || this.savingInstance()) return;
+    if (this.pendingDelete()) {
+      this.savingInstance.set(true);
+      this.store.deleteInstance(
+        detail.id,
+        () => {
+          this.savingInstance.set(false);
+          this.closeDetail();
+        },
+        () => this.savingInstance.set(false),
+      );
+      return;
+    }
+    const dataRows = this.draftData().filter((r) => r.property_id.trim());
+    if (dataRows.some((r) => !r.value.trim())) {
+      this.toast.error('请填写数据属性的值，或不需要的行请删除');
+      return;
+    }
+    const relRows = this.draftRels().filter((r) => r.property_id.trim() || r.object_instance_id.trim());
+    if (relRows.some((r) => !r.property_id.trim() || !r.object_instance_id.trim())) {
+      this.toast.error('请为对象属性选择属性与目标实例');
+      return;
+    }
+    this.savingInstance.set(true);
+    this.store.saveInstance(
+      detail.id,
+      {
+        class_id: this.draftClassId().trim() || null,
+        data_values: dataRows.map((r) => ({ property_id: r.property_id, value: r.value.trim() })),
+        relations: relRows.map((r) => ({
+          property_id: r.property_id,
+          object_instance_id: r.object_instance_id,
+        })),
+      },
+      () => {
+        this.savingInstance.set(false);
+        this.closeDetail();
+      },
+      () => this.savingInstance.set(false),
+    );
+  }
+
+  relationPropertyLabel(r: {
+    property_label?: string | null;
+    direction?: 'out' | 'in';
+  }): string {
+    const name = (r.property_label || '').trim() || '对象属性';
+    return r.direction === 'in' ? `${name}（入边）` : name;
+  }
+
+  relatedInstanceLabel(r: {
+    object_instance_label?: string | null;
+    object_label?: string | null;
+    object_class_label?: string | null;
+    object_instance_id?: string;
+  }): string {
+    const name = (r.object_instance_label || r.object_label || '').trim();
+    if (!name) return r.object_instance_id ? r.object_instance_id.slice(0, 8) : '—';
+    const cls = (r.object_class_label || '').trim();
+    return cls ? `${name}（${cls}）` : name;
   }
 
   confirmMapping(): void {

@@ -46,8 +46,8 @@ export interface BusinessLogicExtractionRequest {
 export interface InstanceRead {
   id: string;
   schema_id: string;
-  class_id: string;
-  class_label?: string;
+  class_id: string | null;
+  class_label?: string | null;
   label: string;
   local_name?: string | null;
   source_type: 'ai_unstructured' | 'structured_mapping' | 'manual';
@@ -56,13 +56,32 @@ export interface InstanceRead {
   created_at: string;
 }
 
+export interface InstanceDataValueWrite {
+  property_id: string;
+  value: string;
+}
+
+export interface InstanceRelationWrite {
+  property_id: string;
+  object_instance_id: string;
+}
+
+export interface InstanceUpdate {
+  class_id: string | null;
+  data_values: InstanceDataValueWrite[];
+  relations: InstanceRelationWrite[];
+}
+
 export interface InstanceDetail extends InstanceRead {
   data_values: { property_id: string; property_label: string; value: string }[];
   relations: {
     property_id: string;
     property_label: string;
     object_instance_id: string;
-    object_label: string;
+    object_instance_label?: string | null;
+    object_label?: string | null;
+    object_class_label?: string | null;
+    direction?: 'out' | 'in';
   }[];
 }
 

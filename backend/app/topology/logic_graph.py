@@ -57,54 +57,65 @@ class LogicGraph(BaseModel):
         return {n.key: n for n in self.nodes}
 
 
+def _unwrap_llm_payload(data: Any) -> dict[str, Any]:
+    if isinstance(data, list):
+        return {"nodes": data, "edges": []}
+    if not isinstance(data, dict):
+        raise ValueError("模型返回的 JSON 不是对象")
+    if "nodes" in data:
+        return data
+    for key in ("graph", "result", "data", "output", "topology"):
+        nested = data.get(key)
+        if isinstance(nested, dict) and "nodes" in nested:
+            return nested
+    return data
+
+
+def _normalize_logic_node(raw: Any, index: int) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    item = dict(raw)
+    if not str(item.get("key") or "").strip():
+        item["key"] = str(item.get("id") or f"n{index + 1}")
+    if not str(item.get("type") or "").strip():
+        item["type"] = str(item.get("node_type") or item.get("nodeType") or "")
+    if not str(item.get("label") or "").strip():
+        item["label"] = str(item.get("name") or item.get("title") or item["key"])
+    if not item.get("instance_ref"):
+        item["instance_ref"] = (
+            item.get("instanceRef")
+            or item.get("instance")
+            or item.get("selectedObjectId")
+            or item.get("ins_name")
+        )
+    return item
+
+
+def _normalize_logic_edge(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "source": raw.get("source") or raw.get("from") or raw.get("src"),
+        "target": raw.get("target") or raw.get("to") or raw.get("dst"),
+        "label": raw.get("label") or raw.get("condition") or "",
+    }
+
+
 def logic_graph_from_llm(data: Any) -> LogicGraph:
     """Coerce common LLM JSON shapes into a LogicGraph."""
-    if isinstance(data, list):
-        payload: dict[str, Any] = {"nodes": data, "edges": []}
-    elif isinstance(data, dict):
-        payload = data
-        if "nodes" not in payload:
-            for key in ("graph", "result", "data", "output", "topology"):
-                nested = payload.get(key)
-                if isinstance(nested, dict) and "nodes" in nested:
-                    payload = nested
-                    break
-    else:
-        raise ValueError("模型返回的 JSON 不是对象")
-
+    payload = _unwrap_llm_payload(data)
     nodes_in = payload.get("nodes") or []
     edges_in = payload.get("edges") or payload.get("links") or []
     nodes: list[dict[str, Any]] = []
     for i, raw in enumerate(nodes_in):
-        if not isinstance(raw, dict):
-            continue
-        item = dict(raw)
-        if not str(item.get("key") or "").strip():
-            item["key"] = str(item.get("id") or f"n{i + 1}")
-        if not str(item.get("type") or "").strip():
-            item["type"] = str(item.get("node_type") or item.get("nodeType") or "")
-        if not str(item.get("label") or "").strip():
-            item["label"] = str(item.get("name") or item.get("title") or item["key"])
-        if not item.get("instance_ref"):
-            item["instance_ref"] = (
-                item.get("instanceRef")
-                or item.get("instance")
-                or item.get("selectedObjectId")
-                or item.get("ins_name")
-            )
-        nodes.append(item)
-
+        item = _normalize_logic_node(raw, i)
+        if item is not None:
+            nodes.append(item)
     edges: list[dict[str, Any]] = []
     for raw in edges_in:
-        if not isinstance(raw, dict):
-            continue
-        edges.append(
-            {
-                "source": raw.get("source") or raw.get("from") or raw.get("src"),
-                "target": raw.get("target") or raw.get("to") or raw.get("dst"),
-                "label": raw.get("label") or raw.get("condition") or "",
-            }
-        )
+        item = _normalize_logic_edge(raw)
+        if item is not None:
+            edges.append(item)
     return LogicGraph.model_validate(
         {"name": payload.get("name") or "", "nodes": nodes, "edges": edges}
     )
